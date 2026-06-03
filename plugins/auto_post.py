@@ -169,7 +169,7 @@ async def on_db_channel_forward(client: Client, message: Message):
 
     # ਗਰੁੱਪ ਦਾ ਬਟਨ ਤਿਆਰ ਕਰੋ
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(text=f"🔰 {ʀᴇǫᴜsᴇᴛ_ɢʀᴏᴜᴘ} 🔰", url=https://t.me/+WtlAyRpidLExMDE1)]
+        [InlineKeyboardButton(text=f"🔰 MOVIE REQUEST GROUP 🔰", url="https://t.me/+WtlAyRpidLExMDE1")]
     ])
 
     try:
