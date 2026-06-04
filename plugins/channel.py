@@ -6,7 +6,13 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 
 # info.py ਤੋਂ ਕੌਨਫਿਗ੍ਰੇਸ਼ਨ ਇੰਪੋਰਟਸ
-from info import CHANNELS, UPDATES_CHANNEL, REQUEST_GROUP_LINK, REQUEST_GROUP_NAME, USE_TMDB_POSTER, TMDB_API_KEY
+from info import (
+    CHANNELS,
+    MOVIE_UPDATE_CHANNEL,
+    GRP_LNK,
+    TMDB_POSTER,
+    TMDB_API_KEY
+)
 # ਤੁਹਾਡੇ ਬੋਟ ਦਾ ਡਾਟਾਬੇਸ ਸੇਵ ਫੰਕਸ਼ਨ
 from database.ia_filterdb import save_file
 
