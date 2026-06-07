@@ -148,7 +148,7 @@ async def fetch_movie_poster(title: str, year: str) -> str:
 
 # Combined event listener for BOTH regular messages AND channel posts in Database Channel
 @Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
-@Client.on_channel_post(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
+@Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
 async def media(bot: Client, message: Message):
     # 1. Standard file extraction
     media_file = None
