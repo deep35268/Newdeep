@@ -73,7 +73,7 @@ REQUEST_GROUP_NAME = get_config("REQUEST_GROUP_NAME", "MOVIE REQUEST GROUP")
 
 # TMDB Poster integration info
 USE_TMDB_POSTER = str(get_config("USE_TMDB_POSTER", "True")).lower() in ("true", "1", "yes")
-TMDB_API_KEY = get_config("TMDB_API_KEY", "")
+TMDB_API_KEY = get_config("TMDB_API_KEY", "f4e6cb562855574dff73c7801d4cebbf")
 
 # Movie filename extraction details
 QUALITY_PATTERNS = ["2160p", "1080p", "720p", "480p", "360p", "bluray", "webrip", "hdrip", "bdrip", "dvdrip"]
