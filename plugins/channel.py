@@ -17,7 +17,7 @@ except ImportError:
     except ImportError:
         # Fallback values if imports fail
         CHANNELS = [-1002239262549] # Replace with database channel lists
-        UPDATES_CHANNEL = -1002537474111 # Replace with your updates channel ID
+        UPDATES_CHANNEL = -1003752618894 # Replace with your updates channel ID
         REQUEST_GROUP_LINK = "https://t.me/+WtlAyRpidLExMDE1"
         REQUEST_GROUP_NAME = "MOVIE REQUEST GROUP"
         USE_TMDB_POSTER = True
