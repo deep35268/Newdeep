@@ -152,7 +152,7 @@ async def fetch_movie_poster(title: str, year: str) -> str:
     Flow: TMDB API -> iTunes API Fallback (Awesome and Free) -> TVMaze API Fallback (Shows/Anime) -> None.
     """
     # 1. TMDB Search (Requires API Key)
-    if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "YOUR_TMDB_API_KEY":
+    if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "f4e6cb562855574dff73c7801d4cebbf":
         try:
             search_url = "https://api.themoviedb.org/3/search/movie"
             params = {"api_key": TMDB_API_KEY, "query": title, "year": year}
