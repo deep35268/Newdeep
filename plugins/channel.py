@@ -1,25 +1,14 @@
 import re
-import os
 import aiohttp
 import asyncio
+import os
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 
-# Import the database function safely so files remain searchable in your bot
-try:
-    from database.ia_filterdb import save_file
-except ImportError:
-    try:
-         from database.ia_filterdb import save_files as save_file
-    except ImportError:
-         # Fallback if DB structure is different
-         async def save_file(*args, **kwargs):
-             return True
+# Import the existing DB save_file function (from your bot's database engine)
+from database.ia_filterdb import save_file
 
-# -------------------------------------------------------------
-# Safely resolve settings from environment, info.py or config.py
-# -------------------------------------------------------------
 def get_config(key, default):
     # Try environment variable first
     val = os.environ.get(key)
@@ -41,24 +30,24 @@ def get_config(key, default):
         pass
     return default
 
-# Safely resolve CHANNELS (Database Channels to look at)
+# Safely resolve CHANNELS (Database Channels)
 raw_channels = get_config("CHANNELS", None)
 if raw_channels is None:
-    raw_channels = get_config("DATABASE_CHANNEL", "-1003954712996")
+    raw_channels = "-1003954712996" 
 
 if isinstance(raw_channels, list):
     CHANNELS = raw_channels
 elif isinstance(raw_channels, (int, float)):
     CHANNELS = [int(raw_channels)]
 else:
-    # Split by comma or space if it's a string
     CHANNELS = [int(v.strip()) for v in re.split(r'[,\s]+', str(raw_channels)) if v.strip().replace('-', '').replace('+', '').isdigit()]
 
+# Ensure CHANNELS is a list of integers
 if not CHANNELS:
     CHANNELS = [-1002427494480]
 
-# Safely resolve UPDATES_CHANNEL (Where movie posts will be sent)
-raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1002427494480"))
+# Safely resolve UPDATES_CHANNEL (Updates publishing channel)
+raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1003752618894"))
 try:
     if isinstance(raw_updates, list):
         UPDATES_CHANNEL = int(raw_updates[0])
@@ -67,20 +56,22 @@ try:
 except (ValueError, TypeError, IndexError):
     UPDATES_CHANNEL = -1003752618894
 
-# Support Group values
+# Safely resolve support group settings & TMDB
 REQUEST_GROUP_LINK = get_config("REQUEST_GROUP_LINK", "https://t.me/+WtlAyRpidLExMDE1")
 REQUEST_GROUP_NAME = get_config("REQUEST_GROUP_NAME", "MOVIE REQUEST GROUP")
-
-# TMDB Poster integration info
 USE_TMDB_POSTER = str(get_config("USE_TMDB_POSTER", "True")).lower() in ("true", "1", "yes")
 TMDB_API_KEY = get_config("TMDB_API_KEY", "f4e6cb562855574dff73c7801d4cebbf")
 
-# Movie filename extraction details
-QUALITY_PATTERNS = ["2160p", "1080p", "720p", "480p", "360p", "bluray", "webrip", "hdrip", "bdrip", "dvdrip"]
+# Filename parsing patterns
+QUALITY_PATTERNS = [
+    "2160p", "1080p", "720p", "480p", "360p", "4k", "ultrahd", "hdr", 
+    "bluray", "web-dl", "webdl", "webrip", "hdrip", "brrip", "dvdrip"
+]
+
 AUDIO_PATTERNS = {
-    "hindi": "Hindi", "english": "English", "tamil": "Tamil", "telugu": "Telugu", 
-    "bengali": "Bengali", "marathi": "Marathi", "kannada": "Kannada", "malayalam": "Malayalam", 
-    "punjabi": "Punjabi", "dual": "Dual Audio", "multi": "Multi Audio"
+    "hindi": "Hindi", "english": "English", "eng": "English", "tamil": "Tamil",
+    "telugu": "Telugu", "bengali": "Bengali", "marathi": "Marathi", "kannada": "Kannada",
+    "malayalam": "Malayalam", "punjabi": "Punjabi", "dual": "Dual Audio", "multi": "Multi Audio"
 }
 
 def parse_filename(filename: str):
@@ -112,7 +103,7 @@ def parse_filename(filename: str):
     # Detect Original ORG tag
     is_org = bool(re.search(r"\b(org|original)\b", clean_lower))
 
-    # Clean Movie Title
+    # Clean Title
     title = clean
     cutoff = len(title)
     if year_match:
@@ -146,33 +137,42 @@ async def fetch_movie_poster(title: str, year: str) -> str:
         print(f"Poster Fetch Error: {e}")
     return None
 
-# Combined event listener for BOTH regular messages AND channel posts in Database Channel
-@Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
+# Combined event trigger for Database Channel (CHANNELS)
 @Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
 async def media(bot: Client, message: Message):
-    # 1. Standard file extraction
+    # 1. Standard file capture
     media_file = None
+    file_type = None  # Local variable to dynamically assign type without crashes
+    
     if message.document:
         media_file = message.document
+        file_type = "document"
     elif message.video:
         media_file = message.video
+        file_type = "video"
     elif message.audio:
         media_file = message.audio
+        file_type = "audio"
     
     if not media_file:
-         return
+        return
 
-    # 2. SAVE FILE TO MONGODB (Ensures files can be searched by users)
+    # 2. SAVE FILE TO MONGODB (Database filter engine normal working)
     try:
+        # Assign file_type using dynamic getattr/setattr safeguards safely
+        try:
+            setattr(media_file, "file_type", file_type)
+        except Exception:
+            pass
         await save_file(media_file)
     except Exception as dbe:
-        print(f"File indexing error: {dbe}")
+        print(f"DB Save failure: {dbe}")
 
     # 3. AUTO-POSTING ENGINE
     file_name = getattr(media_file, "file_name", "movie_file.mp4") or "movie_file.mp4"
     title, year, audios, quality, is_org = parse_filename(file_name)
 
-    # Beautify values for caption
+    # Format texts
     audio_tags = " ".join([f"#{lang}" for lang in audios])
     org_badge = " #ORG" if is_org else ""
     caption_text = f"**{title} {year} (Touch To Copy)**\n\n**➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
@@ -182,17 +182,24 @@ async def media(bot: Client, message: Message):
         [InlineKeyboardButton(text=f"🔰 MOVIE REQUEST GROUP 🔰", url="https://t.me/+WtlAyRpidLExMDE1")]
     ])
 
-    # Try TMDB Poster, Fallback to Video file's original thumbnail
+    # Try TMDB Lookup, Fallback to downloading File Thumbnail (Avoids Expected PHOTO error)
     poster = await fetch_movie_poster(title, year)
+    downloaded_poster = False
+    
     if not poster:
         if hasattr(media_file, "thumbs") and media_file.thumbs:
-            poster = media_file.thumbs[0].file_id
+            try:
+                poster = await bot.download_media(media_file.thumbs[0].file_id)
+                downloaded_poster = True
+            except Exception as e:
+                print(f"Failed to download thumbnail: {e}")
+                poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500&auto=format&fit=crop&q=60"
         else:
-            # High-quality fallback image
+            # Universal fallback placeholder
             poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500&auto=format&fit=crop&q=60"
 
     try:
-        # Publish update to Updates channel
+        # Publish update card to your Telegram Update channel
         await bot.send_photo(
             chat_id=UPDATES_CHANNEL,
             photo=poster,
@@ -203,4 +210,11 @@ async def media(bot: Client, message: Message):
         await asyncio.sleep(e.value)
         await bot.send_photo(chat_id=UPDATES_CHANNEL, photo=poster, caption=caption_text, reply_markup=reply_markup)
     except Exception as e:
-         print(f"Failed to post update to channel: {e}")
+        print(f"Channel update failed: {e}")
+    finally:
+        # Cleanup local downloaded file if it was download_media output to save space
+        if downloaded_poster and poster and os.path.exists(poster):
+            try:
+                os.remove(poster)
+            except Exception as ce:
+                print(f"Error cleaning up local poster file: {ce}")
