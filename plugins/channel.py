@@ -5,53 +5,46 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import FloodWait
 
-# info.py ਤੋਂ ਕੌਨਫਿਗ੍ਰੇਸ਼ਨ ਇੰਪੋਰਟਸ
-from info import (
-    CHANNELS,
-    MOVIE_UPDATE_CHANNEL,
-    GRP_LNK,
-    TMDB_POSTER,
-    TMDB_API_KEY
-)
-# ਤੁਹਾਡੇ ਬੋਟ ਦਾ ਡਾਟਾਬੇਸ ਸੇਵ ਫੰਕਸ਼ਨ
+# Import the existing DB save_file function (from your bot's database engine)
 from database.ia_filterdb import save_file
 
-# ਫਾਈਲਨੇਮ ਵਿੱਚੋਂ ਕੁਆਲਿਟੀ ਅਤੇ ਆਡੀਓ ਟ੍ਰੈਕ ਲੱਭਣ ਲਈ ਪੈਟਰਨ
+# Import config constants
+try:
+    from info import CHANNELS, UPDATES_CHANNEL, REQUEST_GROUP_LINK, REQUEST_GROUP_NAME, USE_TMDB_POSTER, TMDB_API_KEY
+except ImportError:
+    try:
+        from config import CHANNELS, UPDATES_CHANNEL, REQUEST_GROUP_LINK, REQUEST_GROUP_NAME, USE_TMDB_POSTER, TMDB_API_KEY
+    except ImportError:
+        # Fallback values if imports fail
+        CHANNELS = [-1002239262549] # Replace with database channel lists
+        UPDATES_CHANNEL = -1002537474111 # Replace with your updates channel ID
+        REQUEST_GROUP_LINK = "https://t.me/+WtlAyRpidLExMDE1"
+        REQUEST_GROUP_NAME = "MOVIE REQUEST GROUP"
+        USE_TMDB_POSTER = False
+        TMDB_API_KEY = "YOUR_TMDB_API_KEY"
+
+# Filename parsing patterns
 QUALITY_PATTERNS = [
-    r"2160p", r"1080p", r"720p", r"480p", r"360p", 
-    r"4k", r"ultrahd", r"hdr", r"bluray", r"web-dl", r"webdl", r"webrip", r"hdrip", r"brrip", r"dvdrip", r"hq", r"s-print", r"s print"
+    "2160p", "1080p", "720p", "480p", "360p", "4k", "ultrahd", "hdr", 
+    "bluray", "web-dl", "webdl", "webrip", "hdrip", "brrip", "dvdrip"
 ]
 
 AUDIO_PATTERNS = {
-    "hindi": "Hindi",
-    "english": "English",
-    "eng": "English",
-    "tamil": "Tamil",
-    "telugu": "Telugu",
-    "bengali": "Bengali",
-    "marathi": "Marathi",
-    "kannada": "Kannada",
-    "malayalam": "Malayalam",
-    "bhojpuri": "Bhojpuri",
-    "punjabi": "Punjabi",
-    "dual": "Dual Audio",
-    "multi": "Multi Audio"
+    "hindi": "Hindi", "english": "English", "eng": "English", "tamil": "Tamil",
+    "telugu": "Telugu", "bengali": "Bengali", "marathi": "Marathi", "kannada": "Kannada",
+    "malayalam": "Malayalam", "punjabi": "Punjabi", "dual": "Dual Audio", "multi": "Multi Audio"
 }
 
 def parse_filename(filename: str):
-    """
-    ਟੋਰੈਂਟ ਵਰਗੇ ਨਾਮਾਂ ਵਿੱਚੋਂ ਮੂਵੀ ਟਾਈਟਲ, ਸਾਲ, ਆਡੀਓ ਅਤੇ ਕੁਆਲਿਟੀ ਅਲੱਗ ਕਰਦਾ ਹੈ।
-    """
-    # ਐਕਸਟੈਨਸ਼ਨ ਹਟਾਓ
-    clean = re.sub(r"\.(mkv|mp4|avi|webm|mov|3gp)$", "", filename, flags=re.IGNORECASE)
-    # ਬਿੰਦੀਆਂ ਅਤੇ ਅੰਡਰਸਕੋਰ ਹਟਾਓ
+    # Strip extension & clean characters
+    clean = re.sub(r"\.(mkv|mp4|avi|webm|mov)$", "", filename, flags=re.IGNORECASE)
     clean = re.sub(r"[\._\-]", " ", clean)
 
-    # 1. ਰਿਲੀਜ਼ ਸਾਲ ਲੱਭੋ
+    # Detect release year
     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", clean)
     year = year_match.group(1) if year_match else "2025"
 
-    # 2. ਕੁਆਲਿਟੀ ਲੱਭੋ
+    # Detect Video quality
     found_qualities = []
     clean_lower = clean.lower()
     for q in QUALITY_PATTERNS:
@@ -59,131 +52,106 @@ def parse_filename(filename: str):
             found_qualities.append(q.upper())
     quality = " ".join(found_qualities) if found_qualities else "HDRip"
 
-    # 3. ਆਡੀਓ ਟ੍ਰੈਕਸ ਲੱਭੋ
+    # Detect Audios
     found_audios = []
     for key, val in AUDIO_PATTERNS.items():
         if re.search(rf"\b{key}\b", clean_lower):
             if val not in found_audios:
                 found_audios.append(val)
-                
     if not found_audios:
-        found_audios = ["Hindi"]  # ਡਿਫਾਲਟ ਆਡੀਓ
+        found_audios = ["Hindi"]
 
-    # 4. ਕੀ ਆਡੀਓ ਓਰੀਜਨਲ (ORG) ਹੈ?
+    # Detect Original ORG tag
     is_org = bool(re.search(r"\b(org|original)\b", clean_lower))
 
-    # 5. ਮੂਵੀ ਦਾ ਸਾਫ਼ ਟਾਈਟਲ ਕੱਢੋ
+    # Clean Title
     title = clean
     cutoff = len(title)
-    
     if year_match:
         idx = title.find(year)
         if idx != -1 and idx < cutoff:
             cutoff = idx
-            
     for q in QUALITY_PATTERNS:
         match = re.search(rf"\b{q}\b", title, re.IGNORECASE)
         if match and match.start() < cutoff:
             cutoff = match.start()
-
     if cutoff > 0:
         title = title[:cutoff]
-        
-    title = re.sub(r"\s+", " ", title).strip()
-    if not title:
-        title = "Unknown Movie"
+    title = re.sub(r"\s+", " ", title).strip() or "Unknown Movie"
 
     return title, year, found_audios, quality, is_org
 
-
 async def fetch_movie_poster(title: str, year: str) -> str:
-    """TMDb API ਤੋਂ ਅਸਲੀ ਮੂਵੀ ਪੋਸਟਰ ਲਿਆਉਂਦਾ ਹੈ"""
-    if not USE_TMDB_POSTER or not TMDB_API_KEY or TMDB_API_KEY == "YOUR_TMDB_API_KEY":
+    if not USE_TMDB_POSTER or TMDB_API_KEY == "YOUR_TMDB_API_KEY" or not TMDB_API_KEY:
         return None
-        
-    url = "https://api.themoviedb.org/3/search/movie"
+    search_url = "https://api.themoviedb.org/3/search/movie"
     params = {"api_key": TMDB_API_KEY, "query": title, "year": year}
-    
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params, timeout=5) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
+            async with session.get(search_url, params=params, timeout=5) as r:
+                if r.status == 200:
+                    data = await r.json()
                     results = data.get("results")
                     if results and results[0].get("poster_path"):
                         return f"https://image.tmdb.org/t/p/w500{results[0].get('poster_path')}"
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Poster Fetch Error: {e}")
     return None
 
-
-@Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video))
-async def media(bot, message):
-    """ਫਾਈਲ ਨੂੰ ਡਾਟਾਬੇਸ ਵਿੱਚ ਆਮ ਵਾਂਗ ਸੇਵ ਕਰਦਾ ਹੈ ਅਤੇ ਚੈਨਲ ਵਿੱਚ ਸੁੰਦਰ ਪੋਸਟ ਕਰਦਾ ਹੈ"""
-    # 1. ਫਾਈਲ ਨੂੰ ਪਹਿਲਾਂ ਵਾਂਗ ਡਾਟਾਬੇਸ ਵਿੱਚ ਸੇਵ ਕਰੋ
-    try:
-         await save_file(message)
-    except Exception as e:
-         print(f"Error saving to database: {e}")
-
-    # 2. ਅਪਡੇਟ ਚੈਨਲ ਵਿੱਚ ਆਟੋਮੈਟਿਕ ਪੋਸਟ ਕਰੋ
-    if not UPDATES_CHANNEL:
-        return
-
-    # ਫਾਈਲ ਦਾ ਨਾਮ ਲੱਭੋ
-    file_name = None
+# Combined event trigger for Database Channel (CHANNELS)
+@Client.on_message(filters.chat(CHANNELS) & filters.incoming)
+async def media(bot: Client, message: Message):
+    # 1. Standard file capture
+    media_file = None
     if message.document:
-        file_name = message.document.file_name
+        media_file = message.document
     elif message.video:
-        file_name = message.video.file_name or "video.mp4"
-
-    if not file_name:
+        media_file = message.video
+    elif message.audio:
+        media_file = message.audio
+    
+    if not media_file:
         return
 
-    # ਫਾਈਲ ਦੀ ਜਾਣਕਾਰੀ ਪਾਰਸ ਕਰੋ
+    # 2. SAVE FILE TO MONGODB (Keeps indexer working normally)
+    try:
+        await save_file(media_file)
+    except Exception as dbe:
+        print(f"DB Save failure: {dbe}")
+
+    # 3. AUTO-POSTING ENGINE
+    file_name = getattr(media_file, "file_name", "movie_file.mp4") or "movie_file.mp4"
     title, year, audios, quality, is_org = parse_filename(file_name)
 
-    # ਆਡੀਓ ਟੈਗਸ ਤਿਆਰ ਕਰੋ (Pills format ਜਿਵੇਂ #Hindi #English)
+    # Format texts
     audio_tags = " ".join([f"#{lang}" for lang in audios])
     org_badge = " #ORG" if is_org else ""
-    full_audio_info = f"🔊 {audio_tags}{org_badge}"
+    caption_text = f"**{title} {year} (Touch To Copy)**\n\n**➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
 
-    # TMDB ਪੋਸਟਰ ਲਿਆਓ
-    poster = await fetch_movie_poster(title, year)
-    
-    # ਜੇਕਰ TMDB ਪੋਸਟਰ ਨਾ ਮਿਲੇ, ਤਾਂ ਟੈਲੀਗ੍ਰਾਮ ਫਾਈਲ ਦੇ ਆਪਣੇ ਥੰਬਨੇਲ (Thumbnail) ਦੀ ਵਰਤੋਂ ਕਰੋ
-    if not poster:
-        if message.video and message.video.thumbs:
-            poster = message.video.thumbs[0].file_id
-        elif message.document and message.document.thumbs:
-            poster = message.document.thumbs[0].file_id
-        else:
-            # ਇੱਕ ਵਧੀਆ ਡਿਫਾਲਟ ਬੈਕਅੱਪ ਪੋਸਟਰ ਇਮੇਜ
-            poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500"
-
-    # ਤੁਹਾਡੀ ਪਸੰਦ ਦਾ ਕੈਪਸ਼ਨ ਫਾਰਮੈਟ
-    caption = f"**{title} {year} (Touch To Copy)**\n\n**➥ AUDIO TRACK:-** {full_audio_info}\n\nAdded ✅"
-
-    # ਇਨਲਾਈਨ ਗਰੁੱਪ ਲਿੰਕ ਬਟਨ
+    # Button setup
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton(text=f"🔰 MOVIE REQUEST GROUP 🔰", url="https://t.me/+WtlAyRpidLExMDE1")]
     ])
 
+    # Try TMDB Lookup, Fallback to File Thumbnail
+    poster = await fetch_movie_poster(title, year)
+    if not poster:
+        if hasattr(media_file, "thumbs") and media_file.thumbs:
+            poster = media_file.thumbs[0].file_id
+        else:
+            # Universal fallback placeholder
+            poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500&auto=format&fit=crop&q=60"
+
     try:
-        # ਅਪਡੇਟ ਚੈਨਲ ਵਿੱਚ ਸੁੰਦਰ ਪੋਸਟ ਭੇਜੋ
+        # Publish update to Updates channel
         await bot.send_photo(
             chat_id=UPDATES_CHANNEL,
             photo=poster,
-            caption=caption,
+            caption=caption_text,
             reply_markup=reply_markup
         )
     except FloodWait as e:
         await asyncio.sleep(e.value)
-        await bot.send_photo(
-            chat_id=UPDATES_CHANNEL,
-            photo=poster,
-            caption=caption,
-            reply_markup=reply_markup
-        )
+        await bot.send_photo(chat_id=UPDATES_CHANNEL, photo=poster, caption=caption_text, reply_markup=reply_markup)
     except Exception as e:
-        print(f"Failed to send updates post: {e}")
+        print(f"Channel update failed: {e}")
