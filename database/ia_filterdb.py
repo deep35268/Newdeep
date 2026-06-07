@@ -121,7 +121,7 @@ async def save_file(media):
             file_size=media.file_size,
             file_type=media.file_type,
             mime_type=media.mime_type,
-            caption=(media.caption.html if media.caption and INDEX_CAPTION else None),
+            caption=(media.caption.html if hasattr(media, "caption") and media.caption and INDEX_CAPTION else None),
             cover=cover_to_use if COVERX else None,
         )
     except Exception as e:
