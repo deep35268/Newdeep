@@ -49,23 +49,23 @@ else:
     CHANNELS = [int(v.strip()) for v in re.split(r'[,\s]+', str(raw_channels)) if v.strip().replace('-', '').replace('+', '').isdigit()]
 
 if not CHANNELS:
-    CHANNELS = [-1001111111111] # Replace with your Database Channel ID in .env / info.py
+    CHANNELS = [-1003954712996] # Replace with your Database Channel ID in .env / info.py
 
 # Safely resolve Updates posting channel
-raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1002222222222"))
+raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1003752618894"))
 try:
     if isinstance(raw_updates, list):
         UPDATES_CHANNEL = int(raw_updates[0])
     else:
         UPDATES_CHANNEL = int(raw_updates)
 except (ValueError, TypeError, IndexError):
-    UPDATES_CHANNEL = -1002222222222 # Replace with your Main Updates Channel ID
+    UPDATES_CHANNEL = -1003752618894 # Replace with your Main Updates Channel ID
 
 # Configuration options
-REQUEST_GROUP_LINK = get_config("REQUEST_GROUP_LINK", "https://t.me/MovieRequestGroup")
+REQUEST_GROUP_LINK = get_config("REQUEST_GROUP_LINK", "https://t.me/+WtlAyRpidLExMDE1")
 REQUEST_GROUP_NAME = get_config("REQUEST_GROUP_NAME", "PROJECT GROUP")
 USE_TMDB_POSTER = str(get_config("USE_TMDB_POSTER", "True")).lower() in ("true", "1", "yes")
-TMDB_API_KEY = get_config("TMDB_API_KEY", "YOUR_TMDB_API_KEY")
+TMDB_API_KEY = get_config("TMDB_API_KEY", "f4e6cb562855574dff73c7801d4cebbf")
 
 QUALITY_PATTERNS = [
     "2160p", "1080p", "720p", "480p", "360p", "4k", "ultrahd", "hdr", 
