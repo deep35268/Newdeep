@@ -33,6 +33,10 @@ pyshorteners
 colorama
 fuzzywuzzy
 python-Levenshtein==0.27.1
+pyrogram
+tgcrypto
+aiohttp>=3.8.0
+python-dotenv
 
 # Git-based Packages
 git+https://github.com/DreamXBotz/IMDBKit.git@main
