@@ -20,8 +20,8 @@ except ImportError:
         UPDATES_CHANNEL = -1002537474111 # Replace with your updates channel ID
         REQUEST_GROUP_LINK = "https://t.me/+WtlAyRpidLExMDE1"
         REQUEST_GROUP_NAME = "MOVIE REQUEST GROUP"
-        USE_TMDB_POSTER = False
-        TMDB_API_KEY = "YOUR_TMDB_API_KEY"
+        USE_TMDB_POSTER = True
+        TMDB_API_KEY = "f4e6cb562855574dff73c7801d4cebbf"
 
 # Filename parsing patterns
 QUALITY_PATTERNS = [
