@@ -144,7 +144,14 @@ MSG_ALRT = environ.get('MSG_ALRT', 'Share & Support Us ♥️') # Alert message 
 DELETE_TIME = int(environ.get("DELETE_TIME", "300"))  #  deletion time in seconds (default: 5 minutes). Adjust as per your needs.
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")   # Custom caption for files
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) # Custom caption for batch files
-IMDB_TEMPLATE = environ.get("IMDB_TEMPLATE", f"{script.IMDB_TEMPLATE_TXT}")     # Custom IMDB template 
+IMDB_TEMPLATE = """
+<b>🏷️ Movie Name:</b> <code>{title}</code> (Touch to Copy)
+<b>📅 Release Year:</b> <code>{year}</code>
+<b>⭐ Ratings:</b> <code>{rating} / 10</code>
+<b>🔊 Audio Tracks:</b> <code>{audio}</code>
+
+Added Automatically ✅
+"""
 MAX_LIST_ELM = int(environ.get("MAX_LIST_ELM") or 10) or None # Maximum number of elements in a list (default: 10, set 0 for no limit)
 INDEX_REQ_CHANNEL = int(environ.get('INDEX_REQ_CHANNEL', LOG_CHANNEL))  # Index Request Channel ID (make sure bot is admin)
 NO_RESULTS_MSG = bool(environ.get("NO_RESULTS_MSG", True))  # True if you want no results messages in Log Channel
