@@ -161,8 +161,12 @@ async def fetch_movie_poster(title: str, year: str) -> str:
                     if r.status == 200:
                         data = await r.json()
                         results = data.get("results")
-                        if results and results[0].get("poster_path"):
-                            return f"https://image.tmdb.org/t/p/w500{results[0].get('poster_path')}"
+                        if movie.get('backdrop_path'):
+                           poster = f"https://image.tmdb.org/t/p/w1280{movie.get('backdrop_path')}"
+                    elif movie.get('poster_path'):
+                        poster = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}"
+                    else:
+                        poster = None
         except Exception as e:
             print(f"TMDb Poster Search Error: {e}")
 
