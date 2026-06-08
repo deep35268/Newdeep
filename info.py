@@ -44,7 +44,7 @@ FSUB_PICS = (environ.get('FSUB_PICS', 'https://graph.org/file/7478ff3eac37f4329c
 # Admin, Channels & Users Configuration
 # ============================
 ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '6467566398').split()] # Replace with the actual admin ID(s) to add
-CHANNELS = [int(ch) if id_pattern.search(ch) else ch for ch in environ.get('CHANNELS', '-1002427494480').split()]  # Channel id for auto indexing (make sure bot is admin)
+CHANNELS = [int(ch) if id_pattern.search(ch) else ch for ch in environ.get('CHANNELS', '-1003752618894').split()]  # Channel id for auto indexing (make sure bot is admin)
 
 LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1002427494480'))  # Log channel id (make sure bot is admin)
 BIN_CHANNEL = int(environ.get('BIN_CHANNEL', '-1002160542554'))  # Bin channel id (make sure bot is admin)
@@ -144,14 +144,12 @@ MSG_ALRT = environ.get('MSG_ALRT', 'Share & Support Us ♥️') # Alert message 
 DELETE_TIME = int(environ.get("DELETE_TIME", "300"))  #  deletion time in seconds (default: 5 minutes). Adjust as per your needs.
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")   # Custom caption for files
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) # Custom caption for batch files
-IMDB_TEMPLATE = """
-<b>🏷️ Movie Name:</b> <code>{title}</code> (Touch to Copy)
-<b>📅 Release Year:</b> <code>{year}</code>
-<b>⭐ Ratings:</b> <code>{rating} / 10</code>
-<b>🔊 Audio Tracks:</b> <code>{audio}</code>
+IMDB_TEMPLATE = """<code>{title} {year}
+(Touch To Copy)</code>
 
-Added Automatically ✅
-"""
+<b>➥ AUDIO TRACK:- 🔊 #Hindi #ORG</b>
+
+Added ✅"""
 MAX_LIST_ELM = int(environ.get("MAX_LIST_ELM") or 10) or None # Maximum number of elements in a list (default: 10, set 0 for no limit)
 INDEX_REQ_CHANNEL = int(environ.get('INDEX_REQ_CHANNEL', LOG_CHANNEL))  # Index Request Channel ID (make sure bot is admin)
 NO_RESULTS_MSG = bool(environ.get("NO_RESULTS_MSG", True))  # True if you want no results messages in Log Channel
