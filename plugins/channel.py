@@ -65,7 +65,7 @@ except (ValueError, TypeError, IndexError):
 REQUEST_GROUP_LINK = get_config("REQUEST_GROUP_LINK", "https://t.me/+WtlAyRpidLExMDE1")
 REQUEST_GROUP_NAME = get_config("REQUEST_GROUP_NAME", "PROJECT GROUP")
 USE_TMDB_POSTER = str(get_config("USE_TMDB_POSTER", "True")).lower() in ("true", "1", "yes")
-TMDB_API_KEY = get_config("TMDB_API_KEY", "f4e6cb562855574dff73c7801d4cebbf")
+TMDB_API_KEY = get_config("TMDB_API_KEY", "db55323b8d3e4154498498a75642b381")
 
 QUALITY_PATTERNS = [
     "2160p", "1080p", "720p", "480p", "360p", "4k", "ultrahd", "hdr", 
@@ -152,7 +152,7 @@ async def fetch_movie_poster(title: str, year: str) -> str:
     Flow: TMDB API -> iTunes API Fallback (Awesome and Free) -> TVMaze API Fallback (Shows/Anime) -> None.
     """
     # 1. TMDB Search (Requires API Key)
-    if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "f4e6cb562855574dff73c7801d4cebbf":
+    if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "db55323b8d3e4154498498a75642b381":
         try:
             search_url = "https://api.themoviedb.org/3/search/movie"
             params = {"api_key": TMDB_API_KEY, "query": title, "year": year}
