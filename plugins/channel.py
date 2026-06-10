@@ -164,7 +164,7 @@ async def fetch_movie_poster(title: str, year: str) -> str:
                         if movie.get('backdrop_path'):
                            poster = f"https://image.tmdb.org/t/p/w1280{movie.get('backdrop_path')}"
                     elif movie.get('poster_path'):
-                        poster = f"https://image.tmdb.org/t/p/w500{movie.get('poster_path')}"
+                        poster = f"https://image.tmdb.org/t/p/w1280{movie.get('poster_path')}"
                     else:
                         poster = None
         except Exception as e:
