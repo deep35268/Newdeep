@@ -148,29 +148,32 @@ def parse_filename(filename: str):
 
 async def fetch_movie_poster(title: str, year: str) -> str:
     """
-    Fetches the highest quality Movie Poster. 
-    Flow: TMDB API -> iTunes API Fallback (Awesome and Free) -> TVMaze API Fallback (Shows/Anime) -> None.
+    Fetches HD Landscape Poster from TMDB
     """
-    # 1. TMDB Search (Requires API Key)
+    # 1. :TMDB Search
     if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "db55323b8d3e4154498498a75642b381":
+    if USE_TMDB_POSTER and TMDB_API_KEY
         try:
             search_url = "https://api.themoviedb.org/3/search/movie"
             params = {"api_key": TMDB_API_KEY, "query": title, "year": year}
             async with aiohttp.ClientSession() as session:
-                async with session.get(search_url, params=params, timeout=5) as r:
+                async with session.get(search_url, params=params, timeout=10) as r:
                     if r.status == 200:
                         data = await r.json()
-                        results = data.get("results")
                         if movie.get('backdrop_path'):
                            poster = f"https://image.tmdb.org/t/p/w1280{movie.get('backdrop_path')}"
+                                return f"https://image.tmdb.org/t/p/w1280{movie['backdrop_path']}"
+                            # ਜੇ Landscape ਨਾ ਮਿਲੇ ਤਾਂ Portrait
                     elif movie.get('poster_path'):
+                            elif movie.get('poster_path'):
                         poster = f"https://image.tmdb.org/t/p/w1280{movie.get('poster_path')}"
+                                return f"https://image.tmdb.org/t/p/w1280{movie['poster_path']}"
                     else:
                         poster = None
         except Exception as e:
-            print(f"TMDb Poster Search Error: {e}")
+            print(f"TMDB Poster Search Error: {e}")
 
-    # 2. iTunes Movie Search (Free & Unlimited, No Key Needed, High Resolution!)
+    # iTunes Fallback (Portrait)
     try:
         search_query = f"{title} {year}".strip()
         itunes_url = "https://itunes.apple.com/search"
@@ -182,11 +185,11 @@ async def fetch_movie_poster(title: str, year: str) -> str:
                     results = data.get("results")
                     if results and results[0].get("artworkUrl100"):
                         artwork_url = results[0].get("artworkUrl100")
-                        # High-resolution conversion
                         return artwork_url.replace("100x100bb.jpg", "1000x1000bb.jpg").replace("100x100", "1000x1000")
     except Exception as e:
-        print(f"iTunes Poster Fallback Error: {e}")
+        print(f"iTunes Error: {e}")
 
+    return None
     # 3. iTunes Show/Anime search (if movie filter failed)
     try:
         itunes_url = "https://itunes.apple.com/search"
@@ -250,7 +253,7 @@ async def media(bot: Client, message: Message):
     org_badge = " #ORG" if is_org else ""
     
     # Custom post caption
-    caption_text = """<code>{title} {year}</code><code>(Touch To Copy)</code>➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
+    caption_text = f"**{title} {year} **\n\n** ➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
 
     # Setup Request channel buttons
     reply_markup = InlineKeyboardMarkup([
