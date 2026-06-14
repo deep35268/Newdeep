@@ -148,79 +148,71 @@ def parse_filename(filename: str):
 
 async def fetch_movie_poster(title: str, year: str) -> str:
     """
-    Fetches HD Landscape Poster from TMDB
+    Fetches HD Landscape Poster from TMDB + fallback sources
     """
-    # 1. :TMDB Search
+
+    # 1. TMDB
     if USE_TMDB_POSTER and TMDB_API_KEY and TMDB_API_KEY != "db55323b8d3e4154498498a75642b381":
-    if USE_TMDB_POSTER and TMDB_API_KEY
         try:
             search_url = "https://api.themoviedb.org/3/search/movie"
             params = {"api_key": TMDB_API_KEY, "query": title, "year": year}
+
             async with aiohttp.ClientSession() as session:
                 async with session.get(search_url, params=params, timeout=10) as r:
                     if r.status == 200:
                         data = await r.json()
-                        if movie.get('backdrop_path'):
-                           poster = f"https://image.tmdb.org/t/p/w1280{movie.get('backdrop_path')}"
-                                return f"https://image.tmdb.org/t/p/w1280{movie['backdrop_path']}"
-                            # ਜੇ Landscape ਨਾ ਮਿਲੇ ਤਾਂ Portrait
-                    elif movie.get('poster_path'):
-                            elif movie.get('poster_path'):
-                        poster = f"https://image.tmdb.org/t/p/w1280{movie.get('poster_path')}"
-                                return f"https://image.tmdb.org/t/p/w1280{movie['poster_path']}"
-                    else:
-                        poster = None
-        except Exception as e:
-            print(f"TMDB Poster Search Error: {e}")
+                        results = data.get("results", [])
 
-    # iTunes Fallback (Portrait)
+                        if results:
+                            movie = results[0]
+
+                            # Backdrop (landscape)
+                            if movie.get("backdrop_path"):
+                                return f"https://image.tmdb.org/t/p/w1280{movie['backdrop_path']}"
+
+                            # Poster fallback
+                            if movie.get("poster_path"):
+                                return f"https://image.tmdb.org/t/p/w1280{movie['poster_path']}"
+
+        except Exception as e:
+            print(f"TMDB Poster Error: {e}")
+
+    # 2. iTunes fallback
     try:
-        search_query = f"{title} {year}".strip()
         itunes_url = "https://itunes.apple.com/search"
-        params = {"term": search_query, "entity": "movie", "limit": 1}
+        params = {"term": f"{title} {year}", "entity": "movie", "limit": 1}
+
         async with aiohttp.ClientSession() as session:
             async with session.get(itunes_url, params=params, timeout=5) as r:
                 if r.status == 200:
                     data = await r.json()
-                    results = data.get("results")
+                    results = data.get("results", [])
+
                     if results and results[0].get("artworkUrl100"):
-                        artwork_url = results[0].get("artworkUrl100")
-                        return artwork_url.replace("100x100bb.jpg", "1000x1000bb.jpg").replace("100x100", "1000x1000")
+                        return results[0]["artworkUrl100"].replace(
+                            "100x100bb.jpg", "1000x1000bb.jpg"
+                        )
+
     except Exception as e:
         print(f"iTunes Error: {e}")
 
-    return None
-    # 3. iTunes Show/Anime search (if movie filter failed)
-    try:
-        itunes_url = "https://itunes.apple.com/search"
-        params = {"term": title, "limit": 1}
-        async with aiohttp.ClientSession() as session:
-            async with session.get(itunes_url, params=params, timeout=5) as r:
-                if r.status == 200:
-                    data = await r.json()
-                    results = data.get("results")
-                    if results and results[0].get("artworkUrl100"):
-                        artwork_url = results[0].get("artworkUrl100")
-                        return artwork_url.replace("100x100bb.jpg", "1000x1000bb.jpg").replace("100x100", "1000x1000")
-    except Exception as e:
-        print(f"iTunes General Fallback Error: {e}")
-
-    # 4. TVMaze API (Best for webseries and TV shows)
+    # 3. TVMaze fallback
     try:
         tvmaze_url = "https://api.tvmaze.com/singlesearch/shows"
         params = {"q": title}
+
         async with aiohttp.ClientSession() as session:
             async with session.get(tvmaze_url, params=params, timeout=5) as r:
                 if r.status == 200:
                     data = await r.json()
-                    if data and data.get("image"):
-                        img = data.get("image")
-                        return img.get("original") or img.get("medium")
+                    if data.get("image"):
+                        return data["image"].get("original") or data["image"].get("medium")
+
     except Exception as e:
-        print(f"TVMaze Poster Fallback Error: {e}")
+        print(f"TVMaze Error: {e}")
 
     return None
-
+    
 # Trigger when media is uploaded/forwarded to Database Channels
 @Client.on_message(filters.chat(CHANNELS) & (filters.document | filters.video | filters.audio))
 async def media(bot: Client, message: Message):
