@@ -250,7 +250,7 @@ async def media(bot: Client, message: Message):
     org_badge = " #ORG" if is_org else ""
     
     # Custom post caption
-    caption_text = f"**{title} {year} (Touch To Copy)**\n\n**➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
+    caption_text = """<code>{title} {year}</code><code>(Touch To Copy)</code>➥ AUDIO TRACK:-** 🔊 {audio_tags}{org_badge}\n\nAdded ✅"
 
     # Setup Request channel buttons
     reply_markup = InlineKeyboardMarkup([
