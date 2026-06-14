@@ -107,7 +107,7 @@ def parse_filename(filename: str):
 
     # Detect Year (4-digit number like 19xx or 20xx)
     year_match = re.search(r"\b(19\d{2}|20\d{2})\b", clean)
-    year = year_match.group(1) if year_match else "2026"
+    year = year_match.group(1) if year_match else None
 
     # Detect Video quality
     found_qualities = []
@@ -232,7 +232,7 @@ async def media(bot: Client, message: Message):
 
     # 1. Save file to MariaDB / MongoDB (keeps your search system indexed)
     try:
-        await save_file(media_file)
+        await save_file(message)
     except Exception as dbe:
         print(f"DB Save failure (Normal if indexing logic differs): {dbe}")
 
