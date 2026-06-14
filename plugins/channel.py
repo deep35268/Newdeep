@@ -49,10 +49,10 @@ else:
     CHANNELS = [int(v.strip()) for v in re.split(r'[,\s]+', str(raw_channels)) if v.strip().replace('-', '').replace('+', '').isdigit()]
 
 if not CHANNELS:
-    CHANNELS = [-1003954712996] # Replace with your Database Channel ID in .env / info.py
+    CHANNELS = [-1003752618894] # Replace with your Database Channel ID in .env / info.py
 
 # Safely resolve Updates posting channel
-raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1003752618894"))
+raw_updates = get_config("UPDATES_CHANNEL", get_config("LOG_CHANNEL", "-1002427494480"))
 try:
     if isinstance(raw_updates, list):
         UPDATES_CHANNEL = int(raw_updates[0])
