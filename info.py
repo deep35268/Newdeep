@@ -81,7 +81,7 @@ MULTIPLE_DB = is_enabled(os.environ.get('MULTIPLE_DB', "False"), False)
 DATABASE_URI2 = environ.get('DATABASE_URI2', "mongodb+srv://hhhkkkbbb:devils21@cluster0.xuqky.mongodb.net/?retryWrites=true&w=majority")  
 
 # ==========================================
-# ⚡ MOVIE NOTIFICATION & UPDATE SETTINGS (STABLE)
+# ⚡ MOVIE NOTIFICATION & UPDATE SETTINGS
 # ==========================================
 MOVIE_UPDATE_NOTIFICATION = bool(environ.get('MOVIE_UPDATE_NOTIFICATION', True))  
 MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1003752618894'))  
@@ -89,8 +89,8 @@ DREAMXBOTZ_IMAGE_FETCH = bool(environ.get('DREAMXBOTZ_IMAGE_FETCH', True))
 LINK_PREVIEW = bool(environ.get('LINK_PREVIEW', False)) 
 ABOVE_PREVIEW = bool(environ.get('ABOVE_PREVIEW', True)) 
 
-# 100% ਸੁਰੱਖਿਅਤ ਨੋ-ਐਰਰ ਸੈਟਿੰਗ
-TMDB_API_KEY = None 
+# TMDB ਬਾਈਪਾਸ ਕੌਂਫਿਗਰੇਸ਼ਨ
+TMDB_API_KEY = "15d2ea6d0dc1d476efbca3eba2b9abfb" 
 TMDB_POSTER = True 
 LANDSCAPE_POSTER = True 
 
@@ -144,7 +144,7 @@ DELETE_TIME = int(environ.get("DELETE_TIME", "300"))
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")   
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) 
 
-# 🎬 ਕੈਪਸ਼ਨ ਟੈਂਪਲੇਟ
+# 🎬 ਤੁਹਾਡਾ ਮਨਪਸੰਦ ਫਾਰਮੈਟ
 IMDB_TEMPLATE = """🎬 <code>{title} {year}</code>
 
 ⭐ IMDb: {rating}/10
@@ -198,7 +198,6 @@ else:
     ON_HEROKU = False
 BIND_ADRESS = str(getenv('WEB_SERVER_BIND_ADDRESS', '0.0.0.0'))
 FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else APP_NAME+'.herokuapp.com'
-URL = "https://{}/".format(FQDN) if ON_HEROKU or NO_PORT else "https://{}/".format(FQDN, PORT)
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
 WORKERS = int(environ.get('WORKERS', '4'))
 SESSION_NAME = str(environ.get('SESSION_NAME', 'dreamXBotz'))
@@ -211,15 +210,17 @@ if 'DYNO' in environ:
 else:
     ON_HEROKU = False
 HAS_SSL = bool(getenv('HAS_SSL', True))
+
+# 🛠️ FIXED: ਪਿੰਗ ਫੇਲ ਹੋਣ ਵਾਲੀ ਲਾਈਨ ਨੂੰ 100% ਸਹੀ ਕੀਤਾ ਗਿਆ ਹੈ
 if HAS_SSL:
-    URL = "https://{}/".format(FQDN)
+    URL = f"https://{FQDN}/" if not FQDN.startswith("http") else FQDN
 else:
-    URL = "http://{}/".format(FQDN)
+    URL = f"http://{FQDN}/" if not FQDN.startswith("http") else FQDN
 
 REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "⚡️", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
 
 Bot_cmds = {
-    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠᴇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sᴇᴛᴛɪɴɢs", "id": "ɢᴇᴛ ɪᴅ ᴛᴇʟᴇɢʀᴀᴍ ", "info": "Gᴇᴛ Usᴇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sᴇᴀʀᴄʜ...", "trendlist": "Gᴇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ章 Sᴇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs", "send": "<b>ꜱੇɴᴅ ᴍੇꜱꜱᴀɢੇ...</b>", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜਪ ᴄᴍᴅ", "admin_cmd": "ᴀᴅᴍɪɴ ᴄᴍᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
+    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gੇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴɢ Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅᴍɪɴ ᴄᴍᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
 }
 
 if MULTIPLE_DB == False:
