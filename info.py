@@ -7,6 +7,8 @@ from Script import script
 id_pattern = re.compile(r'^.\d+$')
 
 def is_enabled(value, default):
+    if isinstance(value, bool):
+        return value
     if value.lower() in ["true", "yes", "1", "enable", "y"]:
         return True
     elif value.lower() in ["false", "no", "0", "disable", "n"]:
@@ -26,9 +28,9 @@ BOT_TOKEN = environ.get('BOT_TOKEN', "")
 # Bot Settings Configuration
 # ============================
 CACHE_TIME = int(environ.get('CACHE_TIME', 300))    
-USE_CAPTION_FILTER = bool(environ.get('USE_CAPTION_FILTER', True))  
-INDEX_CAPTION = bool(environ.get('SAVE_CAPTION', True)) 
-COVERX = bool(environ.get('COVERX', True)) 
+USE_CAPTION_FILTER = is_enabled(environ.get('USE_CAPTION_FILTER', "True"), True)  
+INDEX_CAPTION = is_enabled(environ.get('SAVE_CAPTION', "True"), True) 
+COVERX = is_enabled(environ.get('COVERX', "True"), True) 
 
 PICS_URL = (environ.get('PICS', 'https://i.imgur.com/vt2AfIN.jpeg')).split() 
 PICS = (environ.get('PICS', 'https://i.imgur.com/vt2AfIN.jpeg')).split()  
@@ -83,11 +85,11 @@ DATABASE_URI2 = environ.get('DATABASE_URI2', "mongodb+srv://hhhkkkbbb:devils21@c
 # ==========================================
 # ⚡ MOVIE NOTIFICATION & UPDATE SETTINGS
 # ==========================================
-MOVIE_UPDATE_NOTIFICATION = bool(environ.get('MOVIE_UPDATE_NOTIFICATION', True))  
+MOVIE_UPDATE_NOTIFICATION = is_enabled(environ.get('MOVIE_UPDATE_NOTIFICATION', "True"), True)  
 MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1003752618894'))  
-DREAMXBOTZ_IMAGE_FETCH = bool(environ.get('DREAMXBOTZ_IMAGE_FETCH', True))  
-LINK_PREVIEW = bool(environ.get('LINK_PREVIEW', False)) 
-ABOVE_PREVIEW = bool(environ.get('ABOVE_PREVIEW', True)) 
+DREAMXBOTZ_IMAGE_FETCH = is_enabled(environ.get('DREAMXBOTZ_IMAGE_FETCH', "True"), True)  
+LINK_PREVIEW = is_enabled(environ.get('LINK_PREVIEW', "False"), False) 
+ABOVE_PREVIEW = is_enabled(environ.get('ABOVE_PREVIEW', "True"), True) 
 
 # TMDB ਬਾਈਪਾਸ ਕੌਂਫਿਗਰੇਸ਼ਨ
 TMDB_API_KEY = "15d2ea6d0dc1d476efbca3eba2b9abfb" 
@@ -97,7 +99,7 @@ LANDSCAPE_POSTER = True
 # ============================
 # Verification Settings
 # ============================
-IS_VERIFY = is_enabled('IS_VERIFY', False)  
+IS_VERIFY = is_enabled(environ.get('IS_VERIFY', "False"), False)  
 LOG_VR_CHANNEL = int(environ.get('LOG_VR_CHANNEL', '-1002160542554')) 
 LOG_API_CHANNEL = int(environ.get('LOG_API_CHANNEL', '-1002160542554')) 
 VERIFY_IMG = environ.get("VERIFY_IMG", "https://telegra.ph/file/9ecc5d6e4df5b83424896.jpg")
@@ -145,7 +147,7 @@ CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) 
 
 # 🎬 ਤੁਹਾਡਾ ਮਨਪਸੰਦ ਫਾਰਮੈਟ
-IMDB_TEMPLATE = """🎬 <code>{title} {year}</code>
+IMDB_TEMPLATE = """🎬 <code>{title}{year}</code>
 
 ⭐ IMDb: {rating}/10
 
@@ -157,7 +159,7 @@ Added ✅"""
 
 MAX_LIST_ELM = int(environ.get("MAX_LIST_ELM") or 10) or None 
 INDEX_REQ_CHANNEL = int(environ.get('INDEX_REQ_CHANNEL', LOG_CHANNEL))  
-NO_RESULTS_MSG = bool(environ.get("NO_RESULTS_MSG", True))  
+NO_RESULTS_MSG = is_enabled(environ.get("NO_RESULTS_MSG", "True"), True)  
 MAX_BTN = is_enabled((environ.get('MAX_BTN', "True")), True)    
 P_TTI_SHOW_OFF = is_enabled((environ.get('P_TTI_SHOW_OFF', "False")), False)    
 
@@ -170,11 +172,11 @@ LONG_IMDB_DESCRIPTION = is_enabled(environ.get("LONG_IMDB_DESCRIPTION", "False")
 SPELL_CHECK_REPLY = is_enabled(environ.get("SPELL_CHECK_REPLY", "True"), True) 
 MELCOW_NEW_USERS = is_enabled((environ.get('MELCOW_NEW_USERS', "False")), False) 
 PROTECT_CONTENT = is_enabled((environ.get('PROTECT_CONTENT', "False")), False) 
-PM_SEARCH = bool(environ.get('PM_SEARCH', True))  
-EMOJI_MODE = bool(environ.get('EMOJI_MODE', True))  
+PM_SEARCH = is_enabled(environ.get('PM_SEARCH', "True"), True)  
+EMOJI_MODE = is_enabled(environ.get('EMOJI_MODE', "True"), True)  
 BUTTON_MODE = is_enabled((environ.get('BUTTON_MODE', "False")), False) 
-STREAM_MODE = bool(environ.get('STREAM_MODE', True)) 
-PREMIUM_STREAM_MODE = bool(environ.get('PREMIUM_STREAM_MODE', False)) 
+STREAM_MODE = is_enabled(environ.get('STREAM_MODE', "True"), True) 
+PREMIUM_STREAM_MODE = is_enabled(environ.get('PREMIUM_STREAM_MODE', "False"), False) 
 MAINTENANCE = is_enabled(environ.get('MAINTENANCE', "False"), False)
 
 AUTH_REQ_CHANNELS = [int(ch) for ch in auth_req_channels.split() if ch and id_pattern.match(ch)] 
@@ -189,7 +191,7 @@ SEASONS = [f"S{str(i).zfill(2)}" for i in range(1, SEASON_COUNT + 1)]
 
 BAD_WORDS = {"PrivateMovieZ", "toonworld4all", "themoviesboss", "1tamilmv", "tamilblasters", "1tamilblasters", "skymovieshd", "extraflix", "hdm2", "moviesmod", "hdhub4u", "mkvcinemas", "primefix", "join", "www", "villa", "tg", "original"}
 
-NO_PORT = bool(environ.get('NO_PORT', False))
+NO_PORT = is_enabled(environ.get('NO_PORT', "False"), False)
 APP_NAME = None
 if 'DYNO' in environ:
     ON_HEROKU = True
@@ -197,21 +199,16 @@ if 'DYNO' in environ:
 else:
     ON_HEROKU = False
 BIND_ADRESS = str(getenv('WEB_SERVER_BIND_ADDRESS', '0.0.0.0'))
-FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else APP_NAME+'.herokuapp.com'
+FQDN = str(getenv('FQDN', BIND_ADRESS)) if not ON_HEROKU or getenv('FQDN') else f"{APP_NAME}.herokuapp.com"
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
 WORKERS = int(environ.get('WORKERS', '4'))
 SESSION_NAME = str(environ.get('SESSION_NAME', 'dreamXBotz'))
 MULTI_CLIENT = False
 name = str(environ.get('name', 'DREAMXBOTZ'))
 PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  
-if 'DYNO' in environ:
-    ON_HEROKU = True
-    APP_NAME = str(getenv('APP_NAME'))
-else:
-    ON_HEROKU = False
-HAS_SSL = bool(getenv('HAS_SSL', True))
 
-# 🛠️ FIXED: ਪਿੰਗ ਫੇਲ ਹੋਣ ਵਾਲੀ ਲਾਈਨ ਨੂੰ 100% ਸਹੀ ਕੀਤਾ ਗਿਆ ਹੈ
+HAS_SSL = is_enabled(getenv('HAS_SSL', "True"), True)
+
 if HAS_SSL:
     URL = f"https://{FQDN}/" if not FQDN.startswith("http") else FQDN
 else:
@@ -220,7 +217,7 @@ else:
 REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "⚡️", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
 
 Bot_cmds = {
-    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gੇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴɢ Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅᴍɪɴ ᴄᴍᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
+    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gᴇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ釋 Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅμɪɴ ᴄμᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
 }
 
 if MULTIPLE_DB == False:
