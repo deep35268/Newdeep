@@ -62,7 +62,7 @@ REQUEST_GROUP_NAME = get_config("REQUEST_GROUP_NAME", "PROJECT GROUP")
 USE_TMDB_POSTER = str(get_config("USE_TMDB_POSTER", "True")).lower() in ("true", "1", "yes")
 TMDB_API_KEY = get_config("TMDB_API_KEY", "db55323b8d3e4154498498a75642b381")
 
-# ਗਲਤੀਆਂ ਨੂੰ ਰੋਕਣ ਲਈ ਗਲੋਬਲ ਲਿਸਟ (ਤਾਂ ਜੋ ਇੱਕੋ ਫਿਲਮ ਦਾ ਪੋਸਟਰ ਬਾਰ-ਬਾਰ ਨਾ ਜਾਵੇ)
+# ਗਲਤੀਆਂ ਨੂੰ ਰੋਕਣ ਲਈ ਗਲੋਬਲ ਲਿਸਟ
 POSTED_MOVIES = set()
 
 QUALITY_PATTERNS = [
@@ -128,7 +128,11 @@ def parse_filename(filename: str):
     return title, year, found_audios, quality, is_org
 
 async def fetch_movie_poster(title: str, year: str) -> str:
+    """
+    ਇਹ ਫੰਕਸ਼ਨ ਇੰਟਰਨੈੱਟ ਤੋਂ HD Landscape (Wide) ਪੋਸਟਰ ਲੱਭਦਾ ਹੈ
+    """
     async with aiohttp.ClientSession() as session:
+        # 1. TMDB - ਪਹਿਲੀ ਪਸੰਦ ਹਮੇਸ਼ਾ Landscape (w1280 Backdrop) ਹੋਵੇਗੀ
         if USE_TMDB_POSTER and TMDB_API_KEY:
             try:
                 search_url = "https://api.themoviedb.org/3/search/movie"
@@ -142,13 +146,16 @@ async def fetch_movie_poster(title: str, year: str) -> str:
                         results = data.get("results", [])
                         if results:
                             movie = results[0]
+                            # ਇੱਥੇ ਸਿਰਫ਼ Landscape (Backdrop) ਪੋਸਟਰ ਦੀ ਮੰਗ ਕੀਤੀ ਗਈ ਹੈ
                             if movie.get("backdrop_path"):
                                 return f"https://image.tmdb.org/t/p/w1280{movie['backdrop_path']}"
+                            # ਜੇਕਰ Landscape ਬਿਲਕੁਲ ਨਾ ਮਿਲੇ, ਤਾਂ ਹੀ ਸਟੈਂਡਰਡ ਪੋਸਟਰ ਆਵੇਗਾ
                             if movie.get("poster_path"):
                                 return f"https://image.tmdb.org/t/p/w1280{movie['poster_path']}"
             except Exception as e:
                 print(f"TMDB Poster Error: {e}")
 
+        # 2. iTunes Fallback (ਜੇਕਰ TMDB ਕੰਮ ਨਾ ਕਰੇ)
         try:
             itunes_url = "https://itunes.apple.com/search"
             term = f"{title} {year}".strip()
@@ -181,7 +188,6 @@ async def media(bot: Client, message: Message):
     if not media_file:
         return
 
-    # 1. ਡਾਟਾ ਹਮੇਸ਼ਾ DB ਵਿੱਚ ਸੇਵ ਹੋਵੇਗਾ (ਚਾਹੇ ਕੋਈ ਵੀ ਕੁਆਲਿਟੀ ਹੋਵੇ)
     try:
         await save_file(message)
     except Exception as dbe:
@@ -190,14 +196,12 @@ async def media(bot: Client, message: Message):
     file_name = getattr(media_file, "file_name", "movie_file.mp4") or "movie_file.mp4"
     title, year, audios, quality, is_org = parse_filename(file_name)
 
-    # ਇੱਕ ਵਿਲੱਖਣ ਆਈਡੀ (Unique ID) ਬਣਾਉਣਾ ਤਾਂ ਜੋ ਪਤਾ ਲੱਗ ਸਕੇ ਕਿ ਇਹ ਫਿਲਮ ਪਹਿਲਾਂ ਭੇਜੀ ਗਈ ਹੈ ਜਾਂ ਨਹੀਂ
     movie_unique_key = f"{title.lower()}_{year}"
 
-    # 2. ਚੈੱਕ ਕਰੋ ਜੇਕਰ ਇਸ ਫਿਲਮ ਦਾ ਪੋਸਟਰ ਪਹਿਲਾਂ ਹੀ ਭੇਜਿਆ ਜਾ ਚੁੱਕਾ ਹੈ, ਤਾਂ ਇੱਥੇ ਹੀ ਰੁਕ ਜਾਓ (ਸਿੰਗਲ ਪੋਸਟਰ ਨਿਯਮ)
+    # ਸਿੰਗਲ ਪੋਸਟਰ ਨਿਯਮ (ਤੁਹਾਡੀ ਪਿਛਲੀ ਮੰਗ ਮੁਤਾਬਕ)
     if movie_unique_key in POSTED_MOVIES:
         return
         
-    # ਜੇਕਰ ਨਵੀਂ ਫਿਲਮ ਹੈ, ਤਾਂ ਇਸਨੂੰ ਲਿਸਟ ਵਿੱਚ ਜੋੜੋ
     POSTED_MOVIES.add(movie_unique_key)
 
     audio_tags = " ".join([f"#{lang}" for lang in audios])
@@ -210,19 +214,22 @@ async def media(bot: Client, message: Message):
         [InlineKeyboardButton(text=f"🔰 {REQUEST_GROUP_NAME} 🔰", url=REQUEST_GROUP_LINK)]
     ])
 
+    # ਇੰਟਰਨੈੱਟ ਤੋਂ HD Landscape ਪੋਸਟਰ ਲੱਭਣਾ
     poster = await fetch_movie_poster(title, year)
     
+    # ਜੇਕਰ ਇੰਟਰਨੈੱਟ 'ਤੇ ਕੁਝ ਵੀ ਨਾ ਮਿਲੇ, ਤਾਂ ਬੈਕਅੱਪ ਸਿਸਟਮ
     if not poster:
         if hasattr(media_file, "thumbs") and media_file.thumbs:
             try:
                 poster = await bot.download_media(media_file.thumbs[0].file_id)
             except Exception:
-                poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500"
+                # ਨਵਾਂ ਸੁੰਦਰ Cinema Landscape ਬੈਕਗ੍ਰਾਊਂਡ ਲਿੰਕ (Default HD Wallpaper)
+                poster = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1280&q=80"
         else:
-            poster = "https://images.unsplash.com/photo-1536440136628-849c177e76a1?w=500"
+            poster = "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=1280&q=80"
 
     try:
-        # ਸਿਰਫ਼ ਇੱਕ ਵਾਰ ਪੋਸਟਰ ਚੈਨਲ ਵਿੱਚ ਜਾਵੇਗਾ
+        # ਚੈਨਲ ਵਿੱਚ ਪੋਸਟਰ ਭੇਜਣਾ
         await bot.send_photo(
             chat_id=UPDATES_CHANNEL,
             photo=poster,
@@ -241,6 +248,6 @@ async def media(bot: Client, message: Message):
             except Exception:
                 pass
 
-    # 10 ਸਕਿੰਟਾਂ ਬਾਅਦ ਮੈਮੋਰੀ ਸਾਫ਼ ਕਰੋ ਤਾਂ ਜੋ ਭਵਿੱਖ ਵਿੱਚ ਜੇਕਰ ਉਹੀ ਫਿਲਮ ਦੁਬਾਰਾ ਅਪਲੋਡ ਹੋਵੇ ਤਾਂ ਨਵਾਂ ਪੋਸਟਰ ਜਾ ਸਕੇ
+    # 10 ਸਕਿੰਟਾਂ ਬਾਅਦ ਮੈਮੋਰੀ ਸਾਫ਼ ਕਰੋ
     await asyncio.sleep(10)
     POSTED_MOVIES.discard(movie_unique_key)
