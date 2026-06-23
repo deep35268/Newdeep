@@ -32,8 +32,8 @@ USE_CAPTION_FILTER = is_enabled(environ.get('USE_CAPTION_FILTER', "True"), True)
 INDEX_CAPTION = is_enabled(environ.get('SAVE_CAPTION', "True"), True) 
 COVERX = is_enabled(environ.get('COVERX', "True"), True) 
 
-PICS_URL = (environ.get('PICS', 'https://i.imgur.com/vt2AfIN.jpeg')).split() 
-PICS = (environ.get('PICS', 'https://i.imgur.com/vt2AfIN.jpeg')).split()  
+PICS_URL = (environ.get('PICS', 'https://graph.org/file/e5eebc6d5caa2f7ced006-9c13a283682117858c.jpg')).split() 
+PICS = (environ.get('PICS', 'https://graph.org/file/e5eebc6d5caa2f7ced006-9c13a283682117858c.jpg')).split()  
 NOR_IMG = environ.get("NOR_IMG", "https://graph.org/file/e20b5fdaf217252964202.jpg")
 MELCOW_PHOTO = environ.get("MELCOW_PHOTO", "https://i.imgur.com/vt2AfIN.jpeg")
 SPELL_IMG = environ.get("SPELL_IMG", "https://graph.org/file/13702ae26fb05df52667c.jpg")
@@ -86,12 +86,12 @@ DATABASE_URI2 = environ.get('DATABASE_URI2', "mongodb+srv://hhhkkkbbb:devils21@c
 # ⚡ MOVIE NOTIFICATION & UPDATE SETTINGS
 # ==========================================
 MOVIE_UPDATE_NOTIFICATION = is_enabled(environ.get('MOVIE_UPDATE_NOTIFICATION', "True"), True)  
-MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1003752618894'))  
+MOVIE_UPDATE_CHANNEL = int(environ.get('MOVIE_UPDATE_CHANNEL', '-1002537474111'))  
 DREAMXBOTZ_IMAGE_FETCH = is_enabled(environ.get('DREAMXBOTZ_IMAGE_FETCH', "True"), True)  
 LINK_PREVIEW = is_enabled(environ.get('LINK_PREVIEW', "False"), False) 
 ABOVE_PREVIEW = is_enabled(environ.get('ABOVE_PREVIEW', "True"), True) 
 
-# TMDB ਬਾਈਪਾਸ ਕੌਂਫਿਗਰੇਸ਼ਨ
+# TMDB ਬਾਈਪਾਸ ਕੌਂਫਿਗਰੇਸ਼ਨ (HD Landscape ਪੋਸਟਰ ਲਈ ਇਹ ਦੋਵੇਂ True ਹੋਣੇ ਜ਼ਰੂਰੀ ਹਨ)
 TMDB_API_KEY = "15d2ea6d0dc1d476efbca3eba2b9abfb" 
 TMDB_POSTER = True 
 LANDSCAPE_POSTER = True 
@@ -146,14 +146,14 @@ DELETE_TIME = int(environ.get("DELETE_TIME", "300"))
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")   
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) 
 
-# 🎬 ਤੁਹਾਡਾ ਮਨਪਸੰਦ ਫਾਰਮੈਟ
+# 🎬 ਤੁਹਾਡਾ ਮਨਪਸੰਦ ਫਾਰਮੈਟ (ਭਾਸ਼ਾ ਨੂੰ ਆਟੋਮੈਟਿਕ ਚੁੱਕਣ ਲਈ {languages} ਕੀਤਾ ਗਿਆ ਹੈ)
 IMDB_TEMPLATE = """🎬 <code>{title}{year}</code>
 
 ⭐ IMDb: {rating}/10
 
 📌 (Touch To Copy)
 
-➡ Audio Track:- 🔊 #Hindi #ORG
+➡ Audio Track:- 🔊 {languages}
 
 Added ✅"""
 
@@ -217,7 +217,7 @@ else:
 REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "⚡️", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
 
 Bot_cmds = {
-    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜᴇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gᴇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ釋 Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛᴏ ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅμɪɴ ᴄμᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
+    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜੇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғᴏ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gੇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ釋 Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀꜱᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛո ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅμɪɴ ᴄμᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
 }
 
 if MULTIPLE_DB == False:
