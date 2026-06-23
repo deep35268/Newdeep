@@ -289,7 +289,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
     }
 
     try:
-        # 1. ਜੇਕਰ ਮੂਵੀ ਪਹਿਲਾਂ ਤੋਂ ਮੌਜੂਦ ਹੈ, ਤਾਂ ਸਿਰਫ਼ ਫਾਈਲ ਅਪਡੇਟ ਕਰੋ
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
         if existing_movie:
             await db.movie_updates.update_one(
@@ -299,13 +298,16 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             await send_movie_update(bot, base_name, is_update=True)
             return
 
-        # 2. TMDB/IMDb ਤੋਂ ਡੀਟੇਲਸ ਫੈਚ ਕਰਨਾ
+        details = {}
         if TMDB_POSTER:
-            details = await get_movie_detailsx(base_name)
-            if not details or details.get("error") or (not details.get("poster_url") and not details.get("backdrop_url")):
+            try:
+                details = await get_movie_detailsx(base_name)
+                if not details or details.get("error") or (not details.get("poster_url") and not details.get("backdrop_url")):
+                    error_tmdb = True
+            except Exception:
                 error_tmdb = True
-                details = await get_movie_details(base_name) or {}
-        else:
+                
+        if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
         raw_genres = details.get("genres", "N/A")
@@ -315,10 +317,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 👑 ਸੁਪਰ HD ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੋਜਿਕ
         final_poster = None
-        if LANDSCAPE_POSTER and TMDB_POSTER and details.get("backdrop_url") and not error_tmdb:
-            backdrop = details.get("backdrop_url")
+        backdrop = details.get("backdrop_url") or details.get("poster_url")
+        
+        if LANDSCAPE_POSTER and backdrop:
             if "t/p/" in backdrop:
                 backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                 backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
@@ -332,12 +334,13 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             default_img = NOR_IMG or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=2560&h=1440&fit=crop"
             final_poster = f"https://images.weserv.nl/?url={default_img}&w=2560&h=1440&fit=cover"
 
-        # ⭐ ਰੇਟਿੰਗ ਵੈਲੀਡੇਸ਼ਨ (ਸਹੀ ਰੇਟਿੰਗ ਦਿਖਾਉਣ ਲਈ)
         rating_val = details.get("rating", "7.2")
         try:
             r = float(rating_val)
-            if r <= 0.0:
+            if r <= 0.0 or r > 10.0:
                 rating_val = "7.2"
+            else:
+                rating_val = str(r)
         except (TypeError, ValueError):
             rating_val = "7.2"
 
@@ -347,7 +350,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "poster_url": final_poster,
             "genres": genres,
             "rating": rating_val,
-            "imdb_url": details.get("url", "") if not TMDB_POSTER or error_tmdb else details.get("tmdb_url"),
+            "imdb_url": details.get("url", "") if error_tmdb else details.get("tmdb_url", ""),
             "year": details.get("year") or media_info["year"],
             "tag": media_info["tag"],
             "ott_platform": media_info["ott_platform"],
@@ -386,7 +389,6 @@ async def send_movie_update(bot, base_name, is_update=False):
                 )
             ]])
             
-            # 🔄 ਮੈਸੇਜ ਐਡਿਟ/ਅਪਡੇਟ ਸੈਕਸ਼ਨ
             if is_update and movie_doc.get("message_id"):
                 try:
                     if movie_doc.get("is_photo"):
@@ -411,7 +413,6 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except MessageIdInvalid:
                     pass
 
-            # 📸 ਨਵਾਂ HD ਫੋਟੋ ਮੈਸੇਜ ਭੇਜਣ ਲਈ
             size = (2560, 1440)
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
                 resized_poster = await fetch_image(movie_doc["poster_url"], size)
@@ -469,7 +470,6 @@ def generate_movie_message(movie_doc, base_name):
     
     year_str = f" ({year_val})" if year_val else ""
 
-    # info.py ਦੇ ਟੈਂਪਲੇਟ ਮੁਤਾਬਕ ਮੈਸੇਜ ਫਾਰਮੈਟ ਕਰਨਾ
     return IMDB_TEMPLATE.format(
         title=filename_display,
         year=year_str,
