@@ -6,7 +6,7 @@ from collections import defaultdict
 from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
 from database.users_chats_db import db
 from pyrogram import Client, filters, enums
-from info import CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, NOR_IMG
+from info import CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, NOR_IMG, IMDB_TEMPLATE
 from Script import script
 from database.ia_filterdb import save_file
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -17,10 +17,8 @@ from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
-# ਇੱਕੋ ਮੂਵੀ ਦੇ ਬਾਰ-ਬਾਰ (ਅਲੱਗ ਕੁਆਲਿਟੀ ਵਾਲੇ) ਪੋਸਟਰ ਰੋਕਣ ਲਈ ਯੂਨੀਕ ਲਿਸਟ
 POSTED_MOVIES = set()
 
-# Precomputed sets for faster lookups
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
     "action", "adventure", "animation", "biography", "comedy", "crime", 
@@ -38,7 +36,6 @@ IGNORE_WORDS = {
     "apple", "hoichoi", "sunnxt", "viki"
 }|BAD_WORDS
 
-# Constants
 CAPTION_LANGUAGES = {
     "hin": "Hindi", "hindi": "Hindi",
     "tam": "Tamil", "tamil": "Tamil",
@@ -71,7 +68,6 @@ STANDARD_GENRES = {
     'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'
 }
 
-# Precompiled regex patterns
 CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
 NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
 QUALITY_PATTERN = re.compile(
@@ -239,7 +235,6 @@ async def media_handler(bot, message):
     media.file_type = next(ft for ft in ("document", "video", "audio") if hasattr(message, ft))
     media.caption = message.caption or ""
     
-    # ਫਾਈਲ ਨੂੰ ਹਮੇਸ਼ਾ ਡਾਟਾਬੇਸ ਵਿੱਚ ਸੇਵ ਕਰਨਾ (ਤਾਂ ਜੋ ਯੂਜ਼ਰਸ ਨੂੰ ਫਾਈਲ ਮਿਲ ਸਕੇ)
     success, info = await save_file(media)
     if not success:
         return
@@ -256,10 +251,8 @@ async def process_and_send_update(bot, filename, caption):
         base_name = media_info["base_name"]
         processed = media_info["processed"]
 
-        # 🎯 ਮੂਵੀ ਦਾ ਯੂਨੀਕ ਕੀਅ (Title + Year)
         movie_key = f"{base_name.lower()}_{media_info['year'] or ''}"
         
-        # ਜੇਕਰ ਇਸ ਮੂਵੀ ਦਾ ਪੋਸਟਰ ਪਹਿਲਾਂ ਹੀ ਚੈਨਲ ਵਿੱਚ ਜਾ ਚੁੱਕਾ ਹੈ (ਜਿਵੇਂ 480p ਵੇਲੇ), ਤਾਂ ਦੁਬਾਰਾ ਪੋਸਟਰ ਨਹੀਂ ਭੇਜਣਾ
         if movie_key in POSTED_MOVIES:
             return
 
@@ -270,7 +263,6 @@ async def process_and_send_update(bot, filename, caption):
             POSTED_MOVIES.add(movie_key)
             await _process_with_lock(bot, filename, caption, media_info, base_name, processed)
             
-            # 15 ਸਕਿੰਟਾਂ ਬਾਅਦ ਕੈਸ਼ੇ ਵਿੱਚੋਂ ਹਟਾਉਣਾ ਤਾਂ ਜੋ ਅਗਲੀ ਵਾਰ ਨਵੀਂ ਮੂਵੀ ਆਉਣ ਤੇ ਰੁਕਾਵਟ ਨਾ ਆਵੇ
             await asyncio.sleep(15)
             POSTED_MOVIES.discard(movie_key)
 
@@ -296,53 +288,88 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         "episode": media_info["episode"]
     }
 
-    if TMDB_POSTER:
-        details = await get_movie_detailsx(base_name)
-        if not details or details.get("error") or (not details.get("poster_url") and not details.get("backdrop_url")):
-            error_tmdb = True
-            details = await get_movie_details(base_name) or {}
-    else:
-        details = await get_movie_details(base_name) or {}
-
-    raw_genres = details.get("genres", "N/A")
-    if isinstance(raw_genres, str):
-        genre_list = [g.strip() for g in raw_genres.split(",")]
-        genres = ", ".join(g for g in genre_list if g in STANDARD_GENRES) or "N/A"
-    else:
-        genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
-        
-    final_poster = None
-    if LANDSCAPE_POSTER and TMDB_POSTER and details.get("backdrop_url") and not error_tmdb:
-        final_poster = f"https://images.weserv.nl/?url={details.get('backdrop_url')}&w=2560&h=1440&fit=cover"
-    elif details.get("poster_url"):
-        final_poster = f"https://images.weserv.nl/?url={details.get('poster_url')}&w=2560&h=1440&fit=cover&a=center"
-    else:
-        default_img = NOR_IMG or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=2560&h=1440&fit=crop"
-        final_poster = f"https://images.weserv.nl/?url={default_img}&w=2560&h=1440&fit=cover"
-
-    movie_doc = {
-        "_id": base_name,
-        "files": [file_data],
-        "poster_url": final_poster,
-        "genres": genres,
-        "rating": details.get("rating", "N/A"),
-        "imdb_url": details.get("url", "") if not TMDB_POSTER or error_tmdb else details.get("tmdb_url"),
-        "year": details.get("year") or media_info["year"],
-        "tag": media_info["tag"],
-        "ott_platform": media_info["ott_platform"],
-        "message_id": None,
-        "is_photo": False,
-        "error_tmdb": error_tmdb,
-        "is_backdrop": True
-    }
-    
     try:
-        await db.movie_updates.insert_one(movie_doc)
-        await send_movie_update(bot, base_name)
-    except DuplicateKeyError:
-        pass
+        # 1. ਜੇਕਰ ਮੂਵੀ ਪਹਿਲਾਂ ਤੋਂ ਮੌਜੂਦ ਹੈ, ਤਾਂ ਸਿਰਫ਼ ਫਾਈਲ ਅਪਡੇਟ ਕਰੋ
+        existing_movie = await db.movie_updates.find_one({"_id": base_name})
+        if existing_movie:
+            await db.movie_updates.update_one(
+                {"_id": base_name},
+                {"$push": {"files": file_data}}
+            )
+            await send_movie_update(bot, base_name, is_update=True)
+            return
 
-async def send_movie_update(bot, base_name):
+        # 2. TMDB/IMDb ਤੋਂ ਡੀਟੇਲਸ ਫੈਚ ਕਰਨਾ
+        if TMDB_POSTER:
+            details = await get_movie_detailsx(base_name)
+            if not details or details.get("error") or (not details.get("poster_url") and not details.get("backdrop_url")):
+                error_tmdb = True
+                details = await get_movie_details(base_name) or {}
+        else:
+            details = await get_movie_details(base_name) or {}
+
+        raw_genres = details.get("genres", "N/A")
+        if isinstance(raw_genres, str):
+            genre_list = [g.strip() for g in raw_genres.split(",")]
+            genres = ", ".join(g for g in genre_list if g in STANDARD_GENRES) or "N/A"
+        else:
+            genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
+            
+        # 👑 ਸੁਪਰ HD ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੋਜਿਕ
+        final_poster = None
+        if LANDSCAPE_POSTER and TMDB_POSTER and details.get("backdrop_url") and not error_tmdb:
+            backdrop = details.get("backdrop_url")
+            if "t/p/" in backdrop:
+                backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
+                backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
+            final_poster = f"https://images.weserv.nl/?url={backdrop}&w=2560&h=1440&fit=cover&output=jpg&q=95"
+        elif details.get("poster_url"):
+            poster = details.get("poster_url")
+            if "t/p/" in poster:
+                poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
+            final_poster = f"https://images.weserv.nl/?url={poster}&w=2560&h=1440&fit=cover&a=center&output=jpg&q=95"
+        else:
+            default_img = NOR_IMG or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=2560&h=1440&fit=crop"
+            final_poster = f"https://images.weserv.nl/?url={default_img}&w=2560&h=1440&fit=cover"
+
+        # ⭐ ਰੇਟਿੰਗ ਵੈਲੀਡੇਸ਼ਨ (ਸਹੀ ਰੇਟਿੰਗ ਦਿਖਾਉਣ ਲਈ)
+        rating_val = details.get("rating", "7.2")
+        try:
+            r = float(rating_val)
+            if r <= 0.0:
+                rating_val = "7.2"
+        except (TypeError, ValueError):
+            rating_val = "7.2"
+
+        movie_doc = {
+            "_id": base_name,
+            "files": [file_data],
+            "poster_url": final_poster,
+            "genres": genres,
+            "rating": rating_val,
+            "imdb_url": details.get("url", "") if not TMDB_POSTER or error_tmdb else details.get("tmdb_url"),
+            "year": details.get("year") or media_info["year"],
+            "tag": media_info["tag"],
+            "ott_platform": media_info["ott_platform"],
+            "message_id": None,
+            "is_photo": False,
+            "error_tmdb": error_tmdb,
+            "is_backdrop": True
+        }
+        
+        await db.movie_updates.insert_one(movie_doc)
+        await send_movie_update(bot, base_name, is_update=False)
+
+    except DuplicateKeyError:
+        await db.movie_updates.update_one(
+            {"_id": base_name},
+            {"$push": {"files": file_data}}
+        )
+        await send_movie_update(bot, base_name, is_update=True)
+    except Exception as e:
+        logger.exception(f"Error in _process_with_lock: {e}")
+
+async def send_movie_update(bot, base_name, is_update=False):
     max_retries = 3
     for attempt in range(max_retries):
         try:
@@ -354,11 +381,37 @@ async def send_movie_update(bot, base_name):
             
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    'ɢᴇᴛ ғɪʟᴇs',
-                    url=f"https://t.me/{temp.U_NAME}?start=getfile-{base_name.replace(' ', '-')}"
+                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ  Gʀᴏᴜᴘ ⚜️',
+                    url="https://t.me/+l-EIo3NnnJAxODE9"
                 )
             ]])
             
+            # 🔄 ਮੈਸੇਜ ਐਡਿਟ/ਅਪਡੇਟ ਸੈਕਸ਼ਨ
+            if is_update and movie_doc.get("message_id"):
+                try:
+                    if movie_doc.get("is_photo"):
+                        await bot.edit_message_caption(
+                            chat_id=MOVIE_UPDATE_CHANNEL,
+                            message_id=movie_doc["message_id"],
+                            caption=text,
+                            reply_markup=buttons,
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    else:
+                        await bot.edit_message_text(
+                            chat_id=MOVIE_UPDATE_CHANNEL,
+                            message_id=movie_doc["message_id"],
+                            text=text,
+                            reply_markup=buttons,
+                            parse_mode=enums.ParseMode.HTML
+                        )
+                    return
+                except MessageNotModified:
+                    return
+                except MessageIdInvalid:
+                    pass
+
+            # 📸 ਨਵਾਂ HD ਫੋਟੋ ਮੈਸੇਜ ਭੇਜਣ ਲਈ
             size = (2560, 1440)
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
                 resized_poster = await fetch_image(movie_doc["poster_url"], size)
@@ -388,8 +441,7 @@ async def send_movie_update(bot, base_name):
             )
             return msg
         except FloodWait as e:
-            wait_time = e.value + 2
-            await asyncio.sleep(wait_time)
+            await asyncio.sleep(e.value + 2)
         except Exception as e:
             logger.error(f"Failed to send movie update: {e}")
             break
@@ -402,10 +454,11 @@ def generate_movie_message(movie_doc, base_name):
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
 
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
+    
     rating = movie_doc.get("rating", "7.2")
     try:
         r = float(rating)
-        if r == 0.0: rating = "7.2"
+        if r <= 0.0: rating = "7.2"
     except (TypeError, ValueError):
         rating = "7.2"
 
@@ -416,10 +469,10 @@ def generate_movie_message(movie_doc, base_name):
     
     year_str = f" ({year_val})" if year_val else ""
 
-    return (
-        f"🎬 <code>{filename_display}{year_str}</code>\n\n"
-        f"⭐ <b>IMDb:</b> {rating}/10\n\n"
-        f"📌 <i>(Touch To Copy)</i>\n\n"
-        f"➡ <b>Audio Track:-</b> 🔊 {language_str}\n\n"
-        f"<b>Added ✅</b>"
+    # info.py ਦੇ ਟੈਂਪਲੇਟ ਮੁਤਾਬਕ ਮੈਸੇਜ ਫਾਰਮੈਟ ਕਰਨਾ
+    return IMDB_TEMPLATE.format(
+        title=filename_display,
+        year=year_str,
+        rating=rating,
+        languages=language_str
 )
