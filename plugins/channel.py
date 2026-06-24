@@ -317,24 +317,25 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 🎬 ਸਿਨੇਮੈਟਿਕ 16:9 ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੋਜਿਕ (ਤੁਹਾਡੇ ਦਿੱਤੇ ਲਿੰਕ ਵਰਗਾ ਫੁੱਲ ਪੋਸਟਰ)
+        # 👑 TMDB 100% ORIGINAL BACKDROP POSTER FIX (ਬਿਨਾਂ ਕਿਸੇ ਬਦਲਾਅ ਦੇ ਓਰੀਜਨਲ ਫੋਟੋ)
         final_poster = None
         backdrop = details.get("backdrop_url") or details.get("poster_url")
         
         if LANDSCAPE_POSTER and backdrop:
             if "t/p/" in backdrop:
-                backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
-                backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
-            # ⚡ fit=cover&crop=smart ਨਾਲ ਫੋਟੋ ਬਿਨਾਂ ਖਰਾਬ ਹੋਏ ਪੂਰੀ ਚੌੜਾਈ 'ਚ ਸੈੱਟ ਹੋਵੇਗੀ
-            final_poster = f"https://images.weserv.nl/?url={backdrop}&w=2560&h=1440&fit=cover&crop=smart&output=jpg&q=95"
+                # ਸਿੱਧਾ original TMDB URL ਵਰਤਿਆ ਜਾਵੇਗਾ, ਕੋਈ ਰੀਸਾਈਜ਼ਰ ਲਿੰਕ ਨਹੀਂ
+                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
+                final_poster = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', final_poster)
+            else:
+                final_poster = backdrop
         elif details.get("poster_url"):
             poster = details.get("poster_url")
             if "t/p/" in poster:
-                poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
-            final_poster = f"https://images.weserv.nl/?url={poster}&w=2560&h=1440&fit=cover&crop=smart&output=jpg&q=95"
+                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
+            else:
+                final_poster = poster
         else:
-            default_img = NOR_IMG or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=2560&h=1440&fit=crop"
-            final_poster = f"https://images.weserv.nl/?url={default_img}&w=2560&h=1440&fit=cover"
+            final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/2f92nfDnutSdrqEfwiZcOFWuNLH.jpg"
 
         rating_val = details.get("rating", "7.2")
         try:
@@ -415,12 +416,11 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except MessageIdInvalid:
                     pass
 
-            size = (2560, 1440)
+            # ⚡ ਹੁਣ ਬਿਨਾਂ ਕਿਸੇ ਰੀਸਾਈਜ਼ ਦੇ ਸਿੱਧਾ ਓਰੀਜਨਲ TMDB ਪੋਸਟਰ ਹੀ ਭੇਜਿਆ ਜਾਵੇਗਾ
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
-                resized_poster = await fetch_image(movie_doc["poster_url"], size)
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=resized_poster,
+                    photo=movie_doc["poster_url"],
                     caption=text,
                     reply_markup=buttons,
                     parse_mode=enums.ParseMode.HTML
