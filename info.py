@@ -94,7 +94,7 @@ ABOVE_PREVIEW = is_enabled(environ.get('ABOVE_PREVIEW', "True"), True)
 # 🔐 ਨਵੀਂ ਵਰਕਿੰਗ API Key (ਪੁਰਾਣੀ ਬਲਾਕ ਹੋਣ ਕਰਕੇ 401 ਐਰਰ ਦੇ ਰਹੀ ਸੀ)
 TMDB_API_KEY = environ.get('TMDB_API_KEY', 'e105e192ff816027b4092b7c46f3d9e8') 
 TMDB_POSTER = True 
-LANDSCAPE_POSTER = True 
+LANDSCAPE_POSTER = False 
 
 # ============================
 # Verification Settings
