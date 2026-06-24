@@ -1,6 +1,7 @@
 import re
 import logging
 import asyncio
+import aiohttp
 from datetime import datetime
 from collections import defaultdict
 from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
@@ -14,6 +15,8 @@ from utils import temp
 from pymongo.errors import PyMongoError, DuplicateKeyError
 from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
 from typing import Optional, Tuple
+from bs4 import BeautifulSoup
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +225,37 @@ def extract_media_info(filename: str, caption: str):
     }
 
 
+# 🌐 ਫ੍ਰੀ ਵੈੱਬ ਸਰਚ ਸਿਸਟਮ (ਬਿਨਾਂ ਕਿਸੇ API KEY ਦੇ ਲੈਂਡਸਕੇਪ ਇਮੇਜ ਲੱਭਣ ਲਈ)
+async def fetch_free_landscape_poster(query: str) -> Optional[str]:
+    try:
+        search_url = "https://html.duckduckgo.com/html/"
+        payload = {'q': f"{query} movie backdrop wallpaper landscape hd"}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(search_url, data=payload, headers=headers, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    # ਬਿਨਾਂ API ਦੇ ਚਿੱਤਰਾਂ ਦੇ ਲਿੰਕ ਸਕ੍ਰੈਪ ਕਰਨਾ
+                    images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
+                    for img in images:
+                        src = img.get('src', '')
+                        if "duckduckgo.com/iu/?u=" in src:
+                            # ਓਰੀਜਨਲ ਇਮੇਜ ਦਾ ਅਸਲ ਯੂਆਰਐਲ (URL) ਬਾਹਰ ਕੱਢਣਾ
+                            actual_url = src.split('?u=')[1].split('&')[0]
+                            import urllib.parse
+                            actual_url = urllib.parse.unquote(actual_url)
+                            # ਕੁਝ ਖਰਾਬ ਫਾਰਮੈਟਸ ਨੂੰ ਫਿਲਟਰ ਕਰਨਾ
+                            if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png']):
+                                return actual_url
+    except Exception as e:
+        logger.error(f"Free Scraping Search Error: {e}")
+    return None
+
+
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     media = next(
@@ -317,19 +351,33 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 👑 TMDB 100% ORIGINAL VERTICAL POSTER FIX (ਤੁਹਾਡੇ ਦਿੱਤੇ ਲਿੰਕ ਵਰਗਾ ਖੜ੍ਹਾ ਪੋਸਟਰ)
+        # 🎬 ਫ੍ਰੀ ਹਾਈਬ੍ਰਿਡ ਪੋਸਟਰ ਚੋਣ ਸਿਸਟਮ
         final_poster = None
-        # ਇੱਥੇ ਪਹਿਲਾਂ poster_url (Vertical) ਚੈੱਕ ਕੀਤਾ ਜਾਵੇਗਾ, ਨਾ ਕਿ ਲੈਂਡਸਕੇਪ ਬੈਕਡ੍ਰੌਪ
-        poster = details.get("poster_url") or details.get("backdrop_url")
+        backdrop = details.get("backdrop_url")
         
-        if poster:
-            if "t/p/" in poster:
-                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
+        if LANDSCAPE_POSTER and backdrop:
+            if "t/p/" in backdrop:
+                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                 final_poster = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', final_poster)
             else:
+                final_poster = backdrop
+        
+        # 🔍 ਜੇ TMDB 'ਤੇ Backdrop ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਬਿਨਾਂ API ਦੇ ਵੈੱਬ ਤੋਂ ਫ੍ਰੀ ਲੱਭੇਗਾ
+        if not final_poster:
+            logger.info(f"TMDB backdrop missing for '{base_name}'. Scraping landscape poster from web...")
+            final_poster = await fetch_free_landscape_poster(base_name)
+
+        # 🛑 ਜੇਕਰ ਫਿਰ ਵੀ ਨਾ ਮਿਲੇ, ਤਾਂ TMDB ਦਾ ਪੁਰਾਣਾ ਪੋਸਟਰ ਟਰਾਈ ਕਰੋ
+        if not final_poster and details.get("poster_url"):
+            poster = details.get("poster_url")
+            if "t/p/" in poster:
+                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
+            else:
                 final_poster = poster
-        else:
-            final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/2f92nfDnutSdrqEfwiZcOFWuNLH.jpg"
+
+        # 🏳️ ਜੇ ਕੁਝ ਵੀ ਕੰਮ ਨਾ ਕਰੇ, ਤਾਂ ਡਿਫੌਲਟ ਲੈਂਡਸਕੇਪ ਫੋਟੋ ਲਗਾਓ
+        if not final_poster:
+            final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/9GBiwvuJahvlfEQtuGhpS384Ei5.jpg"
 
         rating_val = details.get("rating", "7.2")
         try:
@@ -354,7 +402,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "message_id": None,
             "is_photo": False,
             "error_tmdb": error_tmdb,
-            "is_backdrop": False  # ਲੈਂਡਸਕੇਪ ਬੰਦ ਕੀਤਾ
+            "is_backdrop": True
         }
         
         await db.movie_updates.insert_one(movie_doc)
@@ -381,7 +429,7 @@ async def send_movie_update(bot, base_name, is_update=False):
             
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ  Gʀᴏᴜᴘ ⚜️',
+                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ  Gʀۆᴜᴘ ⚜️',
                     url="https://t.me/+l-EIo3NnnJAxODE9"
                 )
             ]])
@@ -410,7 +458,6 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except MessageIdInvalid:
                     pass
 
-            # ⚡ ਸਿੱਧਾ ਓਰੀਜਨਲ ਖੜ੍ਹਾ ਪੋਸਟਰ ਭੇਜਿਆ ਜਾਵੇਗਾ
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
