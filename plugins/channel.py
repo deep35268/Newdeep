@@ -317,21 +317,15 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 👑 TMDB 100% ORIGINAL BACKDROP POSTER FIX (ਬਿਨਾਂ ਕਿਸੇ ਬਦਲਾਅ ਦੇ ਓਰੀਜਨਲ ਫੋਟੋ)
+        # 👑 TMDB 100% ORIGINAL VERTICAL POSTER FIX (ਤੁਹਾਡੇ ਦਿੱਤੇ ਲਿੰਕ ਵਰਗਾ ਖੜ੍ਹਾ ਪੋਸਟਰ)
         final_poster = None
-        backdrop = details.get("backdrop_url") or details.get("poster_url")
+        # ਇੱਥੇ ਪਹਿਲਾਂ poster_url (Vertical) ਚੈੱਕ ਕੀਤਾ ਜਾਵੇਗਾ, ਨਾ ਕਿ ਲੈਂਡਸਕੇਪ ਬੈਕਡ੍ਰੌਪ
+        poster = details.get("poster_url") or details.get("backdrop_url")
         
-        if LANDSCAPE_POSTER and backdrop:
-            if "t/p/" in backdrop:
-                # ਸਿੱਧਾ original TMDB URL ਵਰਤਿਆ ਜਾਵੇਗਾ, ਕੋਈ ਰੀਸਾਈਜ਼ਰ ਲਿੰਕ ਨਹੀਂ
-                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
-                final_poster = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', final_poster)
-            else:
-                final_poster = backdrop
-        elif details.get("poster_url"):
-            poster = details.get("poster_url")
+        if poster:
             if "t/p/" in poster:
                 final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
+                final_poster = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', final_poster)
             else:
                 final_poster = poster
         else:
@@ -360,7 +354,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "message_id": None,
             "is_photo": False,
             "error_tmdb": error_tmdb,
-            "is_backdrop": True
+            "is_backdrop": False  # ਲੈਂਡਸਕੇਪ ਬੰਦ ਕੀਤਾ
         }
         
         await db.movie_updates.insert_one(movie_doc)
@@ -416,7 +410,7 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except MessageIdInvalid:
                     pass
 
-            # ⚡ ਹੁਣ ਬਿਨਾਂ ਕਿਸੇ ਰੀਸਾਈਜ਼ ਦੇ ਸਿੱਧਾ ਓਰੀਜਨਲ TMDB ਪੋਸਟਰ ਹੀ ਭੇਜਿਆ ਜਾਵੇਗਾ
+            # ⚡ ਸਿੱਧਾ ਓਰੀਜਨਲ ਖੜ੍ਹਾ ਪੋਸਟਰ ਭੇਜਿਆ ਜਾਵੇਗਾ
             if movie_doc.get("poster_url") and not LINK_PREVIEW:
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
