@@ -4,19 +4,25 @@ import asyncio
 import aiohttp
 from datetime import datetime
 from collections import defaultdict
-from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
-from database.users_chats_db import db
-from pyrogram import Client, filters, enums
-from info import CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, NOR_IMG, IMDB_TEMPLATE
-from Script import script
-from database.ia_filterdb import save_file
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-from utils import temp
-from pymongo.errors import PyMongoError, DuplicateKeyError
-from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
+import urllib.parse
 from typing import Optional, Tuple
 from bs4 import BeautifulSoup
-import json
+
+from pyrogram import Client, filters, enums
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
+from pymongo.errors import PyMongoError, DuplicateKeyError
+
+# Plugin & Database Imports
+from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
+from database.users_chats_db import db
+from database.ia_filterdb import save_file
+from utils import temp
+from Script import script
+from info import (
+    CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, 
+    BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, NOR_IMG, IMDB_TEMPLATE
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +43,7 @@ IGNORE_WORDS = {
     "japanese", "nf", "netflix", "sonyliv", "sony", "sliv", "amzn", "prime", 
     "primevideo", "hotstar", "zee5", "jio", "jhs", "aha", "hbo", "paramount", 
     "apple", "hoichoi", "sunnxt", "viki"
-}|BAD_WORDS
+} | BAD_WORDS
 
 CAPTION_LANGUAGES = {
     "hin": "Hindi", "hindi": "Hindi",
@@ -80,10 +86,10 @@ QUALITY_PATTERN = re.compile(
     re.IGNORECASE
 )
 YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(?:19|20)\d{2}(?![A-Za-z0-9])")
-RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})',re.IGNORECASE)
+RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})', re.IGNORECASE)
 SINGLE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,3})', re.IGNORECASE)
 NAMED_REGEX = re.compile(r'Season\s*0*(\d{1,2})[\s\-,:]*Ep(?:isode)?\s*0*(\d{1,3})', re.IGNORECASE)
-EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b',re.IGNORECASE)
+EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b', re.IGNORECASE)
 
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 locks = defaultdict(asyncio.Lock)
@@ -225,7 +231,6 @@ def extract_media_info(filename: str, caption: str):
     }
 
 
-# 🌐 ਫ੍ਰੀ ਵੈੱਬ ਸਰਚ ਸਿਸਟਮ (ਬਿਨਾਂ ਕਿਸੇ API KEY ਦੇ ਲੈਂਡਸਕੇਪ ਇਮੇਜ ਲੱਭਣ ਲਈ)
 async def fetch_free_landscape_poster(query: str) -> Optional[str]:
     try:
         search_url = "https://html.duckduckgo.com/html/"
@@ -239,16 +244,12 @@ async def fetch_free_landscape_poster(query: str) -> Optional[str]:
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
                     
-                    # ਬਿਨਾਂ API ਦੇ ਚਿੱਤਰਾਂ ਦੇ ਲਿੰਕ ਸਕ੍ਰੈਪ ਕਰਨਾ
                     images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
                     for img in images:
                         src = img.get('src', '')
                         if "duckduckgo.com/iu/?u=" in src:
-                            # ਓਰੀਜਨਲ ਇਮੇਜ ਦਾ ਅਸਲ ਯੂਆਰਐਲ (URL) ਬਾਹਰ ਕੱਢਣਾ
                             actual_url = src.split('?u=')[1].split('&')[0]
-                            import urllib.parse
                             actual_url = urllib.parse.unquote(actual_url)
-                            # ਕੁਝ ਖਰਾਬ ਫਾਰਮੈਟਸ ਨੂੰ ਫਿਲਟਰ ਕਰਨਾ
                             if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png']):
                                 return actual_url
     except Exception as e:
@@ -279,6 +280,7 @@ async def media_handler(bot, message):
     except Exception:
         logger.exception("Error processing media")
 
+
 async def process_and_send_update(bot, filename, caption):
     try:
         media_info = extract_media_info(filename, caption)
@@ -304,6 +306,7 @@ async def process_and_send_update(bot, filename, caption):
         logger.error(f"Database error in process_and_send_update: {e}")
     except Exception as e:
         logger.exception(f"Processing failed in process_and_send_update: {e}")
+
 
 async def _process_with_lock(bot, filename, caption, media_info, base_name, processed):
     if not hasattr(db, 'movie_updates'):
@@ -351,9 +354,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 🎬 ਫ੍ਰੀ ਹਾਈਬ੍ਰਿਡ ਪੋਸਟਰ ਚੋਣ ਸਿਸਟਮ
+        # 🎬 ਫ੍ਰੀ ਹਾਈਬ੍ਰਿਡ ਪੋਸਟਰ ਚੋਣ ਸਿਸਟਮ (ਲੈਂਡਸਕੇਪ + ਬਲਰ ਬੈਕਗ੍ਰਾਊਂਡ)
         final_poster = None
         backdrop = details.get("backdrop_url")
+        vertical_poster = details.get("poster_url")
         
         if LANDSCAPE_POSTER and backdrop:
             if "t/p/" in backdrop:
@@ -362,20 +366,19 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             else:
                 final_poster = backdrop
         
-        # 🔍 ਜੇ TMDB 'ਤੇ Backdrop ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਬਿਨਾਂ API ਦੇ ਵੈੱਬ ਤੋਂ ਫ੍ਰੀ ਲੱਭੇਗਾ
         if not final_poster:
             logger.info(f"TMDB backdrop missing for '{base_name}'. Scraping landscape poster from web...")
             final_poster = await fetch_free_landscape_poster(base_name)
 
-        # 🛑 ਜੇਕਰ ਫਿਰ ਵੀ ਨਾ ਮਿਲੇ, ਤਾਂ TMDB ਦਾ ਪੁਰਾਣਾ ਪੋਸਟਰ ਟਰਾਈ ਕਰੋ
-        if not final_poster and details.get("poster_url"):
-            poster = details.get("poster_url")
-            if "t/p/" in poster:
-                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
-            else:
-                final_poster = poster
+        # 🛡️ ਜੇ ਲੈਂਡਸਕੇਪ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਖੜ੍ਹਵੇਂ ਪੋਸਟਰ ਨੂੰ Blur Background ਦੇ ਕੇ ਲੈਂਡਸਕੇਪ ਬਣਾਓ
+        if not final_poster and vertical_poster:
+            logger.info(f"Landscape not found. Applying Blur Background to vertical poster for '{base_name}'")
+            if "t/p/" in vertical_poster:
+                vertical_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', vertical_poster)
+            
+            encoded_url = urllib.parse.quote_plus(vertical_poster)
+            final_poster = f"https://images.weserv.nl/?url={encoded_url}&w=1280&h=720&fit=contain&cbg=black&a=c&blur=5"
 
-        # 🏳️ ਜੇ ਕੁਝ ਵੀ ਕੰਮ ਨਾ ਕਰੇ, ਤਾਂ ਡਿਫੌਲਟ ਲੈਂਡਸਕੇਪ ਫੋਟੋ ਲਗਾਓ
         if not final_poster:
             final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/9GBiwvuJahvlfEQtuGhpS384Ei5.jpg"
 
@@ -416,6 +419,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         await send_movie_update(bot, base_name, is_update=True)
     except Exception as e:
         logger.exception(f"Error in _process_with_lock: {e}")
+
 
 async def send_movie_update(bot, base_name, is_update=False):
     max_retries = 3
@@ -491,30 +495,24 @@ async def send_movie_update(bot, base_name, is_update=False):
             break
     return None
 
-def generate_movie_message(movie_doc, base_name):
+
+def generate_movie_message(movie_doc, base_name) -> str:
     all_languages = set()
     for file in movie_doc["files"]:
-        if file["language"] != "N/A":
+        if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
 
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
-    rating = movie_doc.get("rating", "7.2")
-    try:
-        r = float(rating)
-        if r <= 0.0: rating = "7.2"
-    except (TypeError, ValueError):
-        rating = "7.2"
-
-    filename_display = base_name
-    year_val = str(movie_doc.get("year") or "")
-    if year_val and filename_display.strip().endswith(year_val):
-        filename_display = filename_display.strip()[:-len(year_val)].strip()
-    
+    # info.py ਵਾਲੇ IMDB_TEMPLATE ਫਾਰਮੈਟ ਅਨੁਸਾਰ ਡਾਟਾ ਸੈੱਟ ਕਰਨਾ
+    title = base_name.upper()
+    year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
+    rating = movie_doc.get("rating", "7.2")
 
+    # template ਨੂੰ ਫਾਰਮੈਟ ਕਰਨਾ
     return IMDB_TEMPLATE.format(
-        title=filename_display,
+        title=title,
         year=year_str,
         rating=rating,
         languages=language_str
