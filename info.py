@@ -91,7 +91,6 @@ DREAMXBOTZ_IMAGE_FETCH = is_enabled(environ.get('DREAMXBOTZ_IMAGE_FETCH', "True"
 LINK_PREVIEW = is_enabled(environ.get('LINK_PREVIEW', "False"), False) 
 ABOVE_PREVIEW = is_enabled(environ.get('ABOVE_PREVIEW', "True"), True) 
 
-# 🔐 ਨਵੀਂ ਵਰਕਿੰਗ API Key (ਪੁਰਾਣੀ ਬਲਾਕ ਹੋਣ ਕਰਕੇ 401 ਐਰਰ ਦੇ ਰਹੀ ਸੀ)
 TMDB_API_KEY = environ.get('TMDB_API_KEY', '') 
 TMDB_POSTER = True 
 LANDSCAPE_POSTER = True 
@@ -146,8 +145,8 @@ DELETE_TIME = int(environ.get("DELETE_TIME", "300"))
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")   
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION) 
 
-# 🎬 ਤੁਹਾਡਾ ਮਨਪਸੰਦ ਫਾਰਮੈਟ 
-IMDB_TEMPLATE = """🎬 <code>{title}{year}</code>
+# 🎬 ਤੁਹਾਡਾ ਮନਪਸੰਦ ਫਾਰਮੈਟ 
+IMDB_TEMPLATE = """🎬 <code>{title} {year}</code>
 
 ⭐ IMDb: {rating}/10
 
@@ -217,7 +216,7 @@ else:
 REACTIONS = ["🤝", "😇", "🤗", "😍", "👍", "🎅", "😐", "🥰", "🤩", "😱", "🤣", "😘", "👏", "😛", "😈", "🎉", "⚡️", "🫡", "🤓", "😎", "🏆", "🔥", "🤭", "🌚", "🆒", "👻", "😁"]
 
 Bot_cmds = {
-    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜੇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪᴅ ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғۆ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gᴇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ釋 Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀсьᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛո ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅμɪɴ ᴄμᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
+    "start": "Sᴛᴀʀᴛ Mᴇ Bᴀʙʏ", "stats": "Gᴇᴛ Bᴏᴛ Sᴛᴀᴛs", "alive": " Cʜੇᴄᴋ Bᴏᴛ Aʟɪᴠੇ ᴏʀ Nᴏᴛ ", "settings": "ᴄʜᴀɴɢੇ sੇᴛᴛɪɴɢs", "id": "ɢੇᴛ ɪ打 ᴛੇʟੇɢʀᴀᴍ ", "info": "Gੇᴛ Usੇʀ ɪɴғۆ ", "del_msg": "<b>ʀੇᴍᴏᴠੇ ғɪʟੇ ɴᴀᴍੇ...</b>", "movie_update": "ᴏɴ ᴏғғ...", "pm_search": "ᴘᴍ sੇᴀʀᴄʜ...", "trendlist": "Gᴇᴛ Tᴏᴘ Tʀᴀɴᴅɪɴ釋 Sੇᴀʀᴄʜ Lɪsᴛ", "broadcast": "ʙʀᴏᴀᴅᴄᴀсьᴛ...", "grp_broadcast": "ʙʀᴏᴀᴅᴄᴀsᴛ ᴛո ɢʀᴏᴜᴘs", "send": "ꜱੇɴᴅ ᴍੇꜱꜱᴀ章ੇ...", "add_premium": "ᴀᴅᴅ ᴘʀੇᴍɪᴜᴍ", "remove_premium": "<b>ʀੇᴍᴏᴠੇ ᴘʀੇᴍɪᴜᴍ</b>", "premium_users": "ʟɪꜱᴛ...", "restart": "ʀੇꜱᴛᴀʀᴛ...", "group_cmd": "ɢʀᴏᴜᴘ ᴄᴍᴅ", "admin_cmd": "ᴀᴅμɪɴ ᴄμᴅ", "reset_group": "Reset Group", "trial_reset": "Trial Reset", "remove_fsub": "Remove Fsub", "maintenance": "Maintenance Mode"
 }
 
 if MULTIPLE_DB == False:
