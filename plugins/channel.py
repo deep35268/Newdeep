@@ -317,6 +317,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
+        # 👑 ਐਚਡੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਫਿਕਸ (fit=contain & bg=black ਨਾਲ ਹੁਣ ਫੋਟੋ ਕੱਟੇਗੀ ਨਹੀਂ)
         final_poster = None
         backdrop = details.get("backdrop_url") or details.get("poster_url")
         
@@ -324,12 +325,12 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             if "t/p/" in backdrop:
                 backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                 backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
-            final_poster = f"https://images.weserv.nl/?url={backdrop}&w=2560&h=1440&fit=cover&output=jpg&q=95"
+            final_poster = f"https://images.weserv.nl/?url={backdrop}&w=2560&h=1440&fit=contain&bg=black&output=jpg&q=95"
         elif details.get("poster_url"):
             poster = details.get("poster_url")
             if "t/p/" in poster:
                 poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', poster)
-            final_poster = f"https://images.weserv.nl/?url={poster}&w=2560&h=1440&fit=cover&a=center&output=jpg&q=95"
+            final_poster = f"https://images.weserv.nl/?url={poster}&w=2560&h=1440&fit=contain&bg=black&output=jpg&q=95"
         else:
             default_img = NOR_IMG or "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=2560&h=1440&fit=crop"
             final_poster = f"https://images.weserv.nl/?url={default_img}&w=2560&h=1440&fit=cover"
