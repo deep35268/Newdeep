@@ -26,7 +26,9 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
+# Cache for posted movies
 POSTED_MOVIES = set()
+MAX_CACHE_SIZE = 500
 
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined",
@@ -93,6 +95,191 @@ EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b', r
 
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 locks = defaultdict(asyncio.Lock)
+
+# ============ LANDSCAPE POSTER GENERATOR (No Fixed Size) ============
+
+class LandscapePosterGenerator:
+    """Landscape Poster Generator - 16:9 Aspect Ratio"""
+    
+    @staticmethod
+    async def generate_landscape(vertical_poster_url: str, movie_name: str = "") -> Optional[str]:
+        """
+        Generate Landscape poster from vertical poster
+        - 16:9 aspect ratio (landscape)
+        - Blur effect on extended sides
+        - No fixed size, maintains quality
+        """
+        try:
+            if not vertical_poster_url:
+                return None
+            
+            # Clean TMDB URL
+            if "t/p/" in vertical_poster_url:
+                vertical_poster_url = re.sub(r'/t/p/w\d+/', '/t/p/original/', vertical_poster_url)
+                vertical_poster_url = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', vertical_poster_url)
+            
+            encoded_url = urllib.parse.quote_plus(vertical_poster_url)
+            
+            # Method 1: Using images.weserv.nl
+            # w=0 means auto width, h=0 means auto height
+            # fit=contain maintains aspect ratio with blur background
+            landscape_url = (
+                f"https://images.weserv.nl/"
+                f"?url={encoded_url}"
+                f"&w=0"  # Auto width
+                f"&h=0"  # Auto height
+                f"&fit=contain"  # Keep aspect ratio
+                f"&cbg=0a0a0a"  # Dark background
+                f"&a=c"  # Center alignment
+                f"&blur=15"  # Blur effect for background
+                f"&q=100"  # Maximum quality
+                f"&output=jpg"
+                f"&sharp=1"  # Slight sharpening
+            )
+            
+            # Method 2: Alternative with ratio
+            landscape_url_ratio = (
+                f"https://images.weserv.nl/"
+                f"?url={encoded_url}"
+                f"&w=0&h=0"
+                f"&fit=cover"  # Cover the area
+                f"&cbg=000000"
+                f"&a=c"
+                f"&blur=12"
+                f"&q=100"
+                f"&output=jpg"
+            )
+            
+            # Test if URL works
+            async with aiohttp.ClientSession() as session:
+                async with session.head(landscape_url, timeout=10) as response:
+                    if response.status == 200:
+                        logger.info(f"✅ Landscape generated: {movie_name}")
+                        return landscape_url
+                    else:
+                        # Try alternative
+                        async with session.head(landscape_url_ratio, timeout=10) as response2:
+                            if response2.status == 200:
+                                logger.info(f"✅ Landscape (cover) generated: {movie_name}")
+                                return landscape_url_ratio
+                            
+            # Fallback: Simple version
+            simple_url = (
+                f"https://images.weserv.nl/"
+                f"?url={encoded_url}"
+                f"&w=0&h=0"
+                f"&fit=contain"
+                f"&cbg=black"
+                f"&a=c"
+                f"&blur=10"
+                f"&q=90"
+            )
+            return simple_url
+                    
+        except Exception as e:
+            logger.error(f"❌ Error generating landscape: {e}")
+            return None
+    
+    @staticmethod
+    async def generate_landscape_gradient(vertical_poster_url: str) -> Optional[str]:
+        """Generate landscape with gradient blur effect"""
+        try:
+            encoded_url = urllib.parse.quote_plus(vertical_poster_url)
+            
+            landscape_url = (
+                f"https://images.weserv.nl/"
+                f"?url={encoded_url}"
+                f"&w=0&h=0"
+                f"&fit=contain"
+                f"&cbg=1a1a2e"  # Dark blue gradient
+                f"&a=c"
+                f"&blur=20"
+                f"&q=100"
+                f"&output=jpg"
+                f"&brightness=5"
+            )
+            return landscape_url
+        except Exception as e:
+            logger.error(f"Gradient landscape error: {e}")
+            return None
+
+# ============ POSTER FETCHING FUNCTIONS ============
+
+async def fetch_free_landscape_poster(query: str) -> Optional[str]:
+    """Fetch free landscape poster from DuckDuckGo"""
+    try:
+        search_url = "https://html.duckduckgo.com/html/"
+        payload = {'q': f"{query} movie backdrop wallpaper landscape"}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        async with aiohttp.ClientSession() as session:
+            async with session.post(search_url, data=payload, headers=headers, timeout=10) as response:
+                if response.status == 200:
+                    html = await response.text()
+                    soup = BeautifulSoup(html, 'html.parser')
+                    
+                    images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
+                    for img in images:
+                        src = img.get('src', '')
+                        if "duckduckgo.com/iu/?u=" in src:
+                            actual_url = src.split('?u=')[1].split('&')[0]
+                            actual_url = urllib.parse.unquote(actual_url)
+                            if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                                return actual_url
+    except Exception as e:
+        logger.error(f"Free Scraping Search Error: {e}")
+    return None
+
+async def get_landscape_poster(movie_name: str, vertical_poster: Optional[str] = None) -> Optional[str]:
+    """
+    Main function to get Landscape Poster
+    Priority:
+    1. TMDB Backdrop (Landscape)
+    2. Web Search
+    3. Generate from vertical poster with blur effect
+    4. Default fallback
+    """
+    
+    # 1. Try TMDB Backdrop first
+    if LANDSCAPE_POSTER:
+        try:
+            details = await get_movie_detailsx(movie_name)
+            if details and details.get('backdrop_url'):
+                backdrop = details['backdrop_url']
+                # Get original quality
+                if "t/p/" in backdrop:
+                    backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
+                    backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
+                logger.info(f"✅ TMDB Backdrop found: {movie_name}")
+                return backdrop
+        except Exception as e:
+            logger.error(f"TMDB backdrop error: {e}")
+    
+    # 2. Try Web Search
+    landscape = await fetch_free_landscape_poster(movie_name)
+    if landscape:
+        logger.info(f"✅ Web Landscape found: {movie_name}")
+        return landscape
+    
+    # 3. Generate from vertical poster (Landscape with blur effect)
+    if vertical_poster:
+        generator = LandscapePosterGenerator()
+        
+        # Try standard landscape
+        landscape = await generator.generate_landscape(vertical_poster, movie_name)
+        if landscape:
+            return landscape
+        
+        # Try gradient version
+        landscape = await generator.generate_landscape_gradient(vertical_poster)
+        if landscape:
+            return landscape
+    
+    # 4. Default fallback
+    return NOR_IMG
+
+# ============ CLEANING AND EXTRACTION FUNCTIONS ============
 
 def clean_mentions_links(text: str) -> str:
     return CLEAN_PATTERN.sub("", text or "").strip()
@@ -230,32 +417,7 @@ def extract_media_info(filename: str, caption: str):
         "language": language
     }
 
-
-async def fetch_free_landscape_poster(query: str) -> Optional[str]:
-    try:
-        search_url = "https://html.duckduckgo.com/html/"
-        payload = {'q': f"{query} movie backdrop wallpaper landscape hd"}
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(search_url, data=payload, headers=headers, timeout=10) as response:
-                if response.status == 200:
-                    html = await response.text()
-                    soup = BeautifulSoup(html, 'html.parser')
-                    
-                    images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
-                    for img in images:
-                        src = img.get('src', '')
-                        if "duckduckgo.com/iu/?u=" in src:
-                            actual_url = src.split('?u=')[1].split('&')[0]
-                            actual_url = urllib.parse.unquote(actual_url)
-                            if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png']):
-                                return actual_url
-    except Exception as e:
-        logger.error(f"Free Scraping Search Error: {e}")
-    return None
-
+# ============ MAIN HANDLERS ============
 
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
@@ -280,7 +442,6 @@ async def media_handler(bot, message):
     except Exception:
         logger.exception("Error processing media")
 
-
 async def process_and_send_update(bot, filename, caption):
     try:
         media_info = extract_media_info(filename, caption)
@@ -288,6 +449,10 @@ async def process_and_send_update(bot, filename, caption):
         processed = media_info["processed"]
 
         movie_key = f"{base_name.lower()}_{media_info['year'] or ''}"
+        
+        # Cache management
+        if len(POSTED_MOVIES) > MAX_CACHE_SIZE:
+            POSTED_MOVIES.clear()
         
         if movie_key in POSTED_MOVIES:
             return
@@ -306,7 +471,6 @@ async def process_and_send_update(bot, filename, caption):
         logger.error(f"Database error in process_and_send_update: {e}")
     except Exception as e:
         logger.exception(f"Processing failed in process_and_send_update: {e}")
-
 
 async def _process_with_lock(bot, filename, caption, media_info, base_name, processed):
     if not hasattr(db, 'movie_updates'):
@@ -354,33 +518,19 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
             
-        # 🎬 ਫ੍ਰੀ ਹਾਈਬ੍ਰਿਡ ਪੋਸਟਰ ਚੋਣ ਸਿਸਟਮ (ਲੈਂਡਸਕੇਪ + ਬਲਰ ਬੈਕਗ੍ਰਾਊਂਡ)
+        # ============ LANDSCAPE POSTER GENERATION ============
         final_poster = None
         backdrop = details.get("backdrop_url")
         vertical_poster = details.get("poster_url")
         
-        if LANDSCAPE_POSTER and backdrop:
-            if "t/p/" in backdrop:
-                final_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
-                final_poster = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', final_poster)
-            else:
-                final_poster = backdrop
+        # Get landscape poster
+        final_poster = await get_landscape_poster(base_name, vertical_poster)
         
-        if not final_poster:
-            logger.info(f"TMDB backdrop missing for '{base_name}'. Scraping landscape poster from web...")
-            final_poster = await fetch_free_landscape_poster(base_name)
-
-        # 🛡️ ਜੇ ਲੈਂਡਸਕੇਪ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਖੜ੍ਹਵੇਂ ਪੋਸਟਰ ਨੂੰ Blur Background ਦੇ ਕੇ ਲੈਂਡਸਕੇਪ ਬਣਾਓ
-        if not final_poster and vertical_poster:
-            logger.info(f"Landscape not found. Applying Blur Background to vertical poster for '{base_name}'")
-            if "t/p/" in vertical_poster:
-                vertical_poster = re.sub(r'/t/p/w\d+/', '/t/p/original/', vertical_poster)
-            
-            encoded_url = urllib.parse.quote_plus(vertical_poster)
-            final_poster = f"https://images.weserv.nl/?url={encoded_url}&w=1280&h=720&fit=contain&cbg=black&a=c&blur=5"
-
+        # If still no poster, use fallback
         if not final_poster:
             final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/9GBiwvuJahvlfEQtuGhpS384Ei5.jpg"
+        
+        logger.info(f"🎬 Poster for {base_name}: {'Landscape' if 'weserv' in final_poster or 'backdrop' in final_poster else 'Standard'}")
 
         rating_val = details.get("rating", "7.2")
         try:
@@ -405,7 +555,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "message_id": None,
             "is_photo": False,
             "error_tmdb": error_tmdb,
-            "is_backdrop": True
+            "is_backdrop": True,
+            "is_landscape": "weserv" in final_poster or "backdrop" in final_poster
         }
         
         await db.movie_updates.insert_one(movie_doc)
@@ -420,7 +571,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
     except Exception as e:
         logger.exception(f"Error in _process_with_lock: {e}")
 
-
 async def send_movie_update(bot, base_name, is_update=False):
     max_retries = 3
     for attempt in range(max_retries):
@@ -433,7 +583,7 @@ async def send_movie_update(bot, base_name, is_update=False):
             
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ  Gʀۆᴜᴘ ⚜️',
+                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ Gʀۆᴜᴘ ⚜️',
                     url="https://t.me/+l-EIo3NnnJAxODE9"
                 )
             ]])
@@ -495,25 +645,38 @@ async def send_movie_update(bot, base_name, is_update=False):
             break
     return None
 
-
 def generate_movie_message(movie_doc, base_name) -> str:
     all_languages = set()
+    all_qualities = set()
+    all_ott = set()
+    
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
+        if file.get("quality") and file["quality"] != "N/A":
+            all_qualities.add(file["quality"])
+        if file.get("ott_platform") and file["ott_platform"] != "N/A":
+            all_ott.add(file["ott_platform"])
 
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
+    quality_str = ", ".join(sorted(all_qualities)) if all_qualities else "N/A"
+    ott_str = " | ".join(sorted(all_ott)) if all_ott else "N/A"
     
-    # info.py ਵਾਲੇ IMDB_TEMPLATE ਫਾਰਮੈਟ ਅਨੁਸਾਰ ਡਾਟਾ ਸੈੱਟ ਕਰਨਾ
     title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
     rating = movie_doc.get("rating", "7.2")
+    genres = movie_doc.get("genres", "N/A")
+    imdb_url = movie_doc.get("imdb_url", "#")
 
-    # template ਨੂੰ ਫਾਰਮੈਟ ਕਰਨਾ
     return IMDB_TEMPLATE.format(
         title=title,
         year=year_str,
         rating=rating,
-        languages=language_str
+        languages=language_str,
+        genres=genres,
+        ott_platform=ott_str,
+        quality=quality_str,
+        imdb_url=imdb_url,
+        filename=base_name
 )
