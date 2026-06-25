@@ -5,7 +5,7 @@ import aiohttp
 from datetime import datetime
 from collections import defaultdict
 import urllib.parse
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 from bs4 import BeautifulSoup
 
 from pyrogram import Client, filters, enums
@@ -26,8 +26,7 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
-# ============ CONFIGURATION & DATA DICTIONARIES ============
-
+# Cache for posted movies
 POSTED_MOVIES = set()
 MAX_CACHE_SIZE = 500
 
@@ -80,8 +79,6 @@ STANDARD_GENRES = {
     'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'
 }
 
-# ============ REGEX PATTERNS ============
-
 CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
 NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
 QUALITY_PATTERN = re.compile(
@@ -91,7 +88,7 @@ QUALITY_PATTERN = re.compile(
     re.IGNORECASE
 )
 YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(?:19|20)\d{2}(?![A-Za-z0-9])")
-RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,2})', re.IGNORECASE)
+RANGE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,2})\s*(?:to|-)\s*(?:E(?:p(?:isode)?)?)?0*(\d{1,3})', re.IGNORECASE)
 SINGLE_REGEX = re.compile(r'\bS(\d{1,2})[^\w\n\r]*E(?:p(?:isode)?)?0*(\d{1,3})', re.IGNORECASE)
 NAMED_REGEX = re.compile(r'Season\s*0*(\d{1,2})[\s\-,:]*Ep(?:isode)?\s*0*(\d{1,3})', re.IGNORECASE)
 EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b', re.IGNORECASE)
@@ -102,18 +99,26 @@ locks = defaultdict(asyncio.Lock)
 # ============ LANDSCAPE POSTER GENERATOR ============
 
 class LandscapePosterGenerator:
+    """Landscape Poster Generator - Only Landscape, No Vertical Fallback"""
+    
     @staticmethod
     async def generate_landscape(vertical_poster_url: str, movie_name: str = "") -> Optional[str]:
+        """
+        Generate Landscape poster from vertical poster
+        Returns None if cannot generate
+        """
         try:
             if not vertical_poster_url:
                 return None
             
+            # Clean TMDB URL
             if "t/p/" in vertical_poster_url:
                 vertical_poster_url = re.sub(r'/t/p/w\d+/', '/t/p/original/', vertical_poster_url)
                 vertical_poster_url = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', vertical_poster_url)
             
             encoded_url = urllib.parse.quote_plus(vertical_poster_url)
             
+            # Generate landscape with blur effect
             landscape_url = (
                 f"https://images.weserv.nl/"
                 f"?url={encoded_url}"
@@ -127,13 +132,16 @@ class LandscapePosterGenerator:
                 f"&sharp=1"
             )
             
+            # Check if URL works
             async with aiohttp.ClientSession() as session:
                 async with session.head(landscape_url, timeout=10) as response:
                     if response.status == 200:
                         logger.info(f"✅ Landscape generated: {movie_name}")
                         return landscape_url
                     else:
+                        logger.warning(f"⚠️ Landscape generation failed for: {movie_name}")
                         return None
+                    
         except Exception as e:
             logger.error(f"❌ Error generating landscape: {e}")
             return None
@@ -141,11 +149,12 @@ class LandscapePosterGenerator:
 # ============ POSTER FETCHING FUNCTIONS ============
 
 async def fetch_free_landscape_poster(query: str) -> Optional[str]:
+    """Fetch free landscape poster from DuckDuckGo"""
     try:
         search_url = "https://html.duckduckgo.com/html/"
         payload = {'q': f"{query} movie backdrop wallpaper landscape"}
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         }
         async with aiohttp.ClientSession() as session:
             async with session.post(search_url, data=payload, headers=headers, timeout=10) as response:
@@ -159,34 +168,58 @@ async def fetch_free_landscape_poster(query: str) -> Optional[str]:
                             actual_url = src.split('?u=')[1].split('&')[0]
                             actual_url = urllib.parse.unquote(actual_url)
                             if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                return actual_url
+                                # Verify it's a landscape image
+                                async with aiohttp.ClientSession() as session2:
+                                    async with session2.head(actual_url, timeout=10) as resp:
+                                        if resp.status == 200:
+                                            content_type = resp.headers.get('content-type', '')
+                                            if 'image' in content_type:
+                                                return actual_url
     except Exception as e:
         logger.error(f"Free Scraping Search Error: {e}")
     return None
 
 async def get_landscape_poster_only(movie_name: str, vertical_poster: Optional[str] = None) -> Optional[str]:
+    """
+    Get ONLY Landscape Poster
+    Returns None if no landscape found (No vertical fallback)
+    Priority:
+    1. TMDB Backdrop (Landscape)
+    2. Web Search (Landscape)
+    3. None (No vertical poster fallback)
+    """
+    
+    # 1. Try TMDB Backdrop first
     if LANDSCAPE_POSTER:
         try:
             details = await get_movie_detailsx(movie_name)
             if details and details.get('backdrop_url'):
                 backdrop = details['backdrop_url']
+                # Get original quality
                 if "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
+                logger.info(f"✅ TMDB Backdrop found: {movie_name}")
                 return backdrop
         except Exception as e:
             logger.error(f"TMDB backdrop error: {e}")
     
+    # 2. Try Web Search for Landscape
     landscape = await fetch_free_landscape_poster(movie_name)
     if landscape:
+        logger.info(f"✅ Web Landscape found: {movie_name}")
         return landscape
     
+    # 3. Try to generate from vertical poster (but only if we have one)
     if vertical_poster:
         generator = LandscapePosterGenerator()
         landscape = await generator.generate_landscape(vertical_poster, movie_name)
         if landscape:
+            logger.info(f"✅ Generated Landscape from vertical: {movie_name}")
             return landscape
     
+    # 4. NO LANDSCAPE FOUND - Return None (No vertical fallback)
+    logger.warning(f"❌ No landscape found for: {movie_name} - Will use NO poster")
     return None
 
 # ============ CLEANING AND EXTRACTION FUNCTIONS ============
@@ -288,8 +321,14 @@ def extract_media_info(filename: str, caption: str):
             name = name[:year_match.start()].strip()
 
         patterns = [
-            r'\bS\d{1,2}E\d{1,2}\b', r'\bS\d{1,2}\b', r'\bE\d{1,2}\b', r'\b\d{1,2}x\d{1,2}\b',
-            r'\bSeason\s*\d{1,2}\b', r'\bEp(?:isode)?\.?\s*\d{1,3}\b', r'\bEpisode\s*\d{1,3}\b', r'\bPart\s*\d{1,2}\b'
+            r'\bS\d{1,2}E\d{1,2}\b',
+            r'\bS\d{1,2}\b',
+            r'\bE\d{1,2}\b',
+            r'\b\d{1,2}x\d{1,2}\b',
+            r'\bSeason\s*\d{1,2}\b',
+            r'\bEp(?:isode)?\.?\s*\d{1,3}\b',
+            r'\bEpisode\s*\d{1,3}\b',
+            r'\bPart\s*\d{1,2}\b'
         ]
 
         for p in patterns:
@@ -322,13 +361,14 @@ def extract_media_info(filename: str, caption: str):
     }
 
 # ============================================================
-# ============ MAIN EVENT HANDLERS ===========================
+# ============ MAIN HANDLERS ==================================
 # ============================================================
 
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     media = next(
-        (getattr(message, ft) for ft in ("document", "video", "audio") if getattr(message, ft, None)),
+        (getattr(message, ft) for ft in ("document", "video", "audio")
+         if getattr(message, ft, None)),
         None
     )
     if not media:
@@ -353,13 +393,32 @@ async def process_and_send_update(bot, filename, caption):
         base_name = media_info["base_name"]
         processed = media_info["processed"]
 
+        movie_key = f"{base_name.lower()}_{media_info['year'] or ''}"
+        
+        if len(POSTED_MOVIES) > MAX_CACHE_SIZE:
+            POSTED_MOVIES.clear()
+        
+        if movie_key in POSTED_MOVIES:
+            return
+
         lock = locks[base_name]
         async with lock:
+            if movie_key in POSTED_MOVIES:
+                return
+            POSTED_MOVIES.add(movie_key)
             await _process_with_lock(bot, filename, caption, media_info, base_name, processed)
+            
+            await asyncio.sleep(15)
+            POSTED_MOVIES.discard(movie_key)
+
     except PyMongoError as e:
         logger.error(f"Database error in process_and_send_update: {e}")
     except Exception as e:
         logger.exception(f"Processing failed in process_and_send_update: {e}")
+
+# ============================================================
+# ============ UPDATED _process_with_lock =====================
+# ============================================================
 
 async def _process_with_lock(bot, filename, caption, media_info, base_name, processed):
     if not hasattr(db, 'movie_updates'):
@@ -367,6 +426,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
 
     error_tmdb = False
     
+    # ===== FILE DATA =====
     file_data = {
         "filename": filename,
         "processed": processed,
@@ -383,6 +443,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
         
         if existing_movie:
+            # ===== UPDATE EXISTING MOVIE =====
             file_exists = False
             for f in existing_movie.get("files", []):
                 if f.get("filename") == filename:
@@ -390,14 +451,50 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
                     break
             
             if not file_exists:
+                # Append the new file
                 await db.movie_updates.update_one(
                     {"_id": base_name},
                     {"$push": {"files": file_data}}
                 )
-            # ਸਿਰਫ਼ ਪੁਰਾਣੀ ਪੋਸਟ ਨੂੰ Edit/Update ਕਰੇਗਾ (ਨਵੀਂ ਪੋਸਟ ਨਹੀਂ ਜਾਵੇਗੀ, ਜਿਸ ਨਾਲ ਭੀੜ ਨਹੀਂ ਹੁੰਦੀ)
-            await send_movie_update(bot, base_name, is_update=True)
+                
+                # If the movie has NOT been posted yet, try to fetch poster again
+                if not existing_movie.get("is_posted", False):
+                    # Re-fetch poster (maybe the new file has better name? but base_name is same)
+                    details = {}
+                    if TMDB_POSTER:
+                        try:
+                            details = await get_movie_detailsx(base_name)
+                            if not details or details.get("error") or (not details.get("poster_url") and not details.get("backdrop_url")):
+                                error_tmdb = True
+                        except Exception:
+                            error_tmdb = True
+                    if not TMDB_POSTER or error_tmdb or not details:
+                        details = await get_movie_details(base_name) or {}
+                    
+                    final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
+                    
+                    if final_poster:
+                        # Poster found now – update the document and send the post
+                        await db.movie_updates.update_one(
+                            {"_id": base_name},
+                            {"$set": {"poster_url": final_poster, "is_posted": True}}
+                        )
+                        # Send the initial post (not update)
+                        msg = await send_movie_update(bot, base_name, is_update=False)
+                        if msg:
+                            await db.movie_updates.update_one(
+                                {"_id": base_name},
+                                {"$set": {"message_id": msg.id, "is_photo": True}}
+                            )
+                    else:
+                        # Still no poster – just update the file list (no post)
+                        logger.info(f"📦 No poster for {base_name}, file appended but not posted yet.")
+                else:
+                    # Already posted – send update
+                    await send_movie_update(bot, base_name, is_update=True)
             return
 
+        # ===== NEW MOVIE – GET DETAILS =====
         details = {}
         if TMDB_POSTER:
             try:
@@ -410,6 +507,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
+        # ===== GENRES (optional, kept for DB) =====
         raw_genres = details.get("genres", "N/A")
         if isinstance(raw_genres, str):
             genre_list = [g.strip() for g in raw_genres.split(",")]
@@ -417,8 +515,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
         
+        # ===== TRY TO GET LANDSCAPE POSTER =====
         final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
-
+        
+        # ===== RATING (if needed) =====
         rating_val = details.get("rating", "7.2")
         try:
             r = float(rating_val)
@@ -429,10 +529,11 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         except (TypeError, ValueError):
             rating_val = "7.2"
 
+        # ===== CREATE MOVIE DOCUMENT =====
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster,
+            "poster_url": final_poster,          # Could be None
             "genres": genres,
             "rating": rating_val,
             "imdb_url": details.get("url", "") if error_tmdb else details.get("tmdb_url", ""),
@@ -443,18 +544,34 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "is_photo": False,
             "error_tmdb": error_tmdb,
             "is_backdrop": True,
-            "is_landscape": final_poster is not None
+            "is_landscape": final_poster is not None,
+            "is_posted": False   # <--- NEW FLAG
         }
         
         await db.movie_updates.insert_one(movie_doc)
-        await send_movie_update(bot, base_name, is_update=False)
+        
+        # ===== SEND POST ONLY IF POSTER EXISTS =====
+        if final_poster:
+            # Send the post and mark as posted
+            msg = await send_movie_update(bot, base_name, is_update=False)
+            if msg:
+                await db.movie_updates.update_one(
+                    {"_id": base_name},
+                    {"$set": {"message_id": msg.id, "is_photo": True, "is_posted": True}}
+                )
+        else:
+            logger.info(f"📦 New movie {base_name} saved without poster – not posted yet.")
 
     except DuplicateKeyError:
+        # Handle rare race condition
         await db.movie_updates.update_one(
             {"_id": base_name},
             {"$push": {"files": file_data}}
         )
-        await send_movie_update(bot, base_name, is_update=True)
+        # Re-fetch to check if posted
+        movie = await db.movie_updates.find_one({"_id": base_name})
+        if movie and movie.get("is_posted", False):
+            await send_movie_update(bot, base_name, is_update=True)
     except Exception as e:
         logger.exception(f"Error in _process_with_lock: {e}")
 
@@ -472,15 +589,12 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
-            # ਕਾਪੀ ਬਟਨ ਪੂਰੀ ਤਰ੍ਹਾਂ ਹਟਾ ਦਿੱਤਾ ਗਿਆ ਹੈ - ਸਿਰਫ਼ ਗਰੁੱਪ ਲਿੰਕ ਬਚਿਆ ਹੈ
-            buttons = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        text='⚜️ Movie Request Group ⚜️',
-                        url="https://t.me/+l-EIo3NnnJAxODE9"
-                    )
-                ]
-            ])
+            buttons = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ Gʀۆᴜᴘ ⚜️',
+                    url="https://t.me/+l-EIo3NnnJAxODE9"
+                )
+            ]])
             
             if is_update and movie_doc.get("message_id"):
                 try:
@@ -500,15 +614,17 @@ async def send_movie_update(bot, base_name, is_update=False):
                             reply_markup=buttons,
                             parse_mode=enums.ParseMode.HTML
                         )
-                    return
+                    return movie_doc
                 except MessageNotModified:
-                    return
+                    return movie_doc
                 except MessageIdInvalid:
                     pass
 
+            # ===== CHECK IF POSTER EXISTS =====
             poster_url = movie_doc.get("poster_url")
             
             if poster_url and not LINK_PREVIEW:
+                # Send with photo
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=poster_url,
@@ -518,6 +634,7 @@ async def send_movie_update(bot, base_name, is_update=False):
                 )
                 is_photo = True
             else:
+                # Send without photo (text only)
                 send_params = {
                     "chat_id": MOVIE_UPDATE_CHANNEL,
                     "text": text,
@@ -543,28 +660,34 @@ async def send_movie_update(bot, base_name, is_update=False):
     return None
 
 # ============================================================
-# ============ GENERATE MOVIE MESSAGE =========================
+# ============ UPDATED GENERATE MOVIE MESSAGE ================
 # ============================================================
 
 def generate_movie_message(movie_doc, base_name) -> str:
+    """Generate message with the new simple template."""
+    
+    # Collect all languages from files
     all_languages = set()
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
     
-    language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Unknown"
+    # If no language found, default to #Hindi
+    language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
+    # Movie details
     title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
-    rating = movie_doc.get("rating", "N/A")
+    imdb_url = movie_doc.get("imdb_url", "#")
     
-    return f"""🎬 <b>{title}{year_str}</b>
+    # ===== NEW TEMPLATE AS REQUESTED =====
+    message = f"""
+🎬 {title}{year_str} (Touch to Copy)
 
-⭐ IMDb: {rating}/10
-
+⭐ IMDb: <a href='{imdb_url}'>Click Here</a>
 ➡ Audio Track:- 🔊 {language_str}
 
-Added ✅"""
-
-# (ਨੋਟ: ਕਾਪੀ ਬਟਨ ਵਾਲਾ @Client.on_callback_query() ਹੈਂਡਲਰ ਇੱਥੋਂ ਪੂਰੀ ਤਰ੍ਹਾਂ ਡਲੀਟ ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ)
+Added ✅
+"""
+    return message
