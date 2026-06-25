@@ -102,8 +102,6 @@ locks = defaultdict(asyncio.Lock)
 # ============ LANDSCAPE POSTER GENERATOR ============
 
 class LandscapePosterGenerator:
-    """Landscape Poster Generator - Only Landscape, No Vertical Fallback"""
-    
     @staticmethod
     async def generate_landscape(vertical_poster_url: str, movie_name: str = "") -> Optional[str]:
         try:
@@ -290,14 +288,8 @@ def extract_media_info(filename: str, caption: str):
             name = name[:year_match.start()].strip()
 
         patterns = [
-            r'\bS\d{1,2}E\d{1,2}\b',
-            r'\bS\d{1,2}\b',
-            r'\bE\d{1,2}\b',
-            r'\b\d{1,2}x\d{1,2}\b',
-            r'\bSeason\s*\d{1,2}\b',
-            r'\bEp(?:isode)?\.?\s*\d{1,3}\b',
-            r'\bEpisode\s*\d{1,3}\b',
-            r'\bPart\s*\d{1,2}\b'
+            r'\bS\d{1,2}E\d{1,2}\b', r'\bS\d{1,2}\b', r'\bE\d{1,2}\b', r'\b\d{1,2}x\d{1,2}\b',
+            r'\bSeason\s*\d{1,2}\b', r'\bEp(?:isode)?\.?\s*\d{1,3}\b', r'\bEpisode\s*\d{1,3}\b', r'\bPart\s*\d{1,2}\b'
         ]
 
         for p in patterns:
@@ -336,8 +328,7 @@ def extract_media_info(filename: str, caption: str):
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
     media = next(
-        (getattr(message, ft) for ft in ("document", "video", "audio")
-         if getattr(message, ft, None)),
+        (getattr(message, ft) for ft in ("document", "video", "audio") if getattr(message, ft, None)),
         None
     )
     if not media:
@@ -362,24 +353,9 @@ async def process_and_send_update(bot, filename, caption):
         base_name = media_info["base_name"]
         processed = media_info["processed"]
 
-        movie_key = f"{base_name.lower()}_{media_info['year'] or ''}"
-        
-        if len(POSTED_MOVIES) > MAX_CACHE_SIZE:
-            POSTED_MOVIES.clear()
-        
-        if movie_key in POSTED_MOVIES:
-            return
-
         lock = locks[base_name]
         async with lock:
-            if movie_key in POSTED_MOVIES:
-                return
-            POSTED_MOVIES.add(movie_key)
             await _process_with_lock(bot, filename, caption, media_info, base_name, processed)
-            
-            await asyncio.sleep(15)
-            POSTED_MOVIES.discard(movie_key)
-
     except PyMongoError as e:
         logger.error(f"Database error in process_and_send_update: {e}")
     except Exception as e:
@@ -418,7 +394,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
                     {"_id": base_name},
                     {"$push": {"files": file_data}}
                 )
-                await send_movie_update(bot, base_name, is_update=True)
+            # ਸਿਰਫ਼ ਪੁਰਾਣੀ ਪੋਸਟ ਨੂੰ Edit/Update ਕਰੇਗਾ (ਨਵੀਂ ਪੋਸਟ ਨਹੀਂ ਜਾਵੇਗੀ, ਜਿਸ ਨਾਲ ਭੀੜ ਨਹੀਂ ਹੁੰਦੀ)
+            await send_movie_update(bot, base_name, is_update=True)
             return
 
         details = {}
@@ -441,9 +418,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
         
         final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
-        
-        if not final_poster:
-            logger.warning(f"⚠️ No landscape poster for: {base_name} - Sending without poster")
 
         rating_val = details.get("rating", "7.2")
         try:
@@ -498,15 +472,8 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
-            # Button configuration setup
-            movie_name_for_button = base_name.upper()
+            # ਕਾਪੀ ਬਟਨ ਪੂਰੀ ਤਰ੍ਹਾਂ ਹਟਾ ਦਿੱਤਾ ਗਿਆ ਹੈ - ਸਿਰਫ਼ ਗਰੁੱਪ ਲਿੰਕ ਬਚਿਆ ਹੈ
             buttons = InlineKeyboardMarkup([
-                [
-                    InlineKeyboardButton(
-                        text=f"📋 {movie_name_for_button}",
-                        callback_data=f"copy_{base_name}"
-                    )
-                ],
                 [
                     InlineKeyboardButton(
                         text='⚜️ Movie Request Group ⚜️',
@@ -576,7 +543,7 @@ async def send_movie_update(bot, base_name, is_update=False):
     return None
 
 # ============================================================
-# ============ MESSAGE GENERATION ENGINE =====================
+# ============ GENERATE MOVIE MESSAGE =========================
 # ============================================================
 
 def generate_movie_message(movie_doc, base_name) -> str:
@@ -600,20 +567,4 @@ def generate_movie_message(movie_doc, base_name) -> str:
 
 Added ✅"""
 
-# ============================================================
-# ============ CALLBACK INTERACTION HANDLER ===================
-# ============================================================
-
-@Client.on_callback_query()
-async def handle_callback(bot, callback_query):
-    try:
-        data = callback_query.data
-        if data.startswith("copy_"):
-            movie_name = data.replace("copy_", "")
-            await callback_query.answer(
-                f"📋 '{movie_name.upper()}' ready for selection!",
-                show_alert=True
-            )
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-        await callback_query.answer("❌ Error occurred!", show_alert=True)
+# (ਨੋਟ: ਕਾਪੀ ਬਟਨ ਵਾਲਾ @Client.on_callback_query() ਹੈਂਡਲਰ ਇੱਥੋਂ ਪੂਰੀ ਤਰ੍ਹਾਂ ਡਲੀਟ ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ)
