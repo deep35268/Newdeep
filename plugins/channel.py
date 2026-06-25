@@ -186,7 +186,8 @@ async def get_landscape_poster_only(movie_name: str, vertical_poster: Optional[s
     Priority:
     1. TMDB Backdrop (Landscape)
     2. Web Search (Landscape)
-    3. None (No vertical poster fallback)
+    3. Generate from vertical (landscape blur)
+    4. None (No poster)
     """
     
     # 1. Try TMDB Backdrop first
@@ -218,8 +219,8 @@ async def get_landscape_poster_only(movie_name: str, vertical_poster: Optional[s
             logger.info(f"✅ Generated Landscape from vertical: {movie_name}")
             return landscape
     
-    # 4. NO LANDSCAPE FOUND - Return None (No vertical fallback)
-    logger.warning(f"❌ No landscape found for: {movie_name} - Will use NO poster")
+    # 4. NO LANDSCAPE FOUND - Return None
+    logger.warning(f"❌ No landscape found for: {movie_name}")
     return None
 
 # ============ CLEANING AND EXTRACTION FUNCTIONS ============
@@ -417,7 +418,7 @@ async def process_and_send_update(bot, filename, caption):
         logger.exception(f"Processing failed in process_and_send_update: {e}")
 
 # ============================================================
-# ============ UPDATED _process_with_lock =====================
+# ============ _process_with_lock =============================
 # ============================================================
 
 async def _process_with_lock(bot, filename, caption, media_info, base_name, processed):
@@ -459,7 +460,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
                 
                 # If the movie has NOT been posted yet, try to fetch poster again
                 if not existing_movie.get("is_posted", False):
-                    # Re-fetch poster (maybe the new file has better name? but base_name is same)
+                    # Re-fetch poster
                     details = {}
                     if TMDB_POSTER:
                         try:
@@ -474,10 +475,32 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
                     final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
                     
                     if final_poster:
-                        # Poster found now – update the document and send the post
+                        # Poster found now – update and send the post
+                        # Also update rating and year if available
+                        update_data = {
+                            "poster_url": final_poster,
+                            "is_posted": True
+                        }
+                        # Update rating if available
+                        if details.get("rating"):
+                            try:
+                                r = float(details.get("rating"))
+                                if 0.0 < r <= 10.0:
+                                    update_data["rating"] = f"{r:.1f}"
+                            except:
+                                pass
+                        # Update year if available
+                        if details.get("year"):
+                            update_data["year"] = details.get("year")
+                        # Update IMDb URL
+                        if details.get("url"):
+                            update_data["imdb_url"] = details.get("url")
+                        elif details.get("tmdb_url"):
+                            update_data["imdb_url"] = details.get("tmdb_url")
+                        
                         await db.movie_updates.update_one(
                             {"_id": base_name},
-                            {"$set": {"poster_url": final_poster, "is_posted": True}}
+                            {"$set": update_data}
                         )
                         # Send the initial post (not update)
                         msg = await send_movie_update(bot, base_name, is_update=False)
@@ -507,7 +530,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
-        # ===== GENRES (optional, kept for DB) =====
+        # ===== GENRES (optional) =====
         raw_genres = details.get("genres", "N/A")
         if isinstance(raw_genres, str):
             genre_list = [g.strip() for g in raw_genres.split(",")]
@@ -518,26 +541,34 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         # ===== TRY TO GET LANDSCAPE POSTER =====
         final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
         
-        # ===== RATING (if needed) =====
-        rating_val = details.get("rating", "7.2")
+        # ===== RATING - IMPROVED EXTRACTION =====
+        rating_val = "N/A"
         try:
-            r = float(rating_val)
-            if r <= 0.0 or r > 10.0:
-                rating_val = "7.2"
-            else:
-                rating_val = str(r)
-        except (TypeError, ValueError):
-            rating_val = "7.2"
+            raw_rating = details.get("rating")
+            if raw_rating is not None:
+                r = float(raw_rating)
+                if 0.0 < r <= 10.0:
+                    rating_val = f"{r:.1f}"
+                else:
+                    logger.warning(f"Invalid rating value {r} for {base_name}, using N/A")
+        except (TypeError, ValueError) as e:
+            logger.error(f"Could not parse rating for {base_name}: {e}")
+
+        # ===== YEAR =====
+        year_val = details.get("year") or media_info["year"]
+
+        # ===== IMDB URL =====
+        imdb_url = details.get("url", "") if error_tmdb else details.get("tmdb_url", "")
 
         # ===== CREATE MOVIE DOCUMENT =====
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster,          # Could be None
+            "poster_url": final_poster,
             "genres": genres,
             "rating": rating_val,
-            "imdb_url": details.get("url", "") if error_tmdb else details.get("tmdb_url", ""),
-            "year": details.get("year") or media_info["year"],
+            "imdb_url": imdb_url,
+            "year": year_val,
             "tag": media_info["tag"],
             "ott_platform": media_info["ott_platform"],
             "message_id": None,
@@ -545,7 +576,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "error_tmdb": error_tmdb,
             "is_backdrop": True,
             "is_landscape": final_poster is not None,
-            "is_posted": False   # <--- NEW FLAG
+            "is_posted": False
         }
         
         await db.movie_updates.insert_one(movie_doc)
@@ -589,10 +620,11 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
+            # Optional: Request Group button (you can customize or remove)
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    text='⚜️ Mᴏᴠɪᴇ Rᴇǫᴜᴇꜱᴛ Gʀۆᴜᴘ ⚜️',
-                    url="https://t.me/+l-EIo3NnnJAxODE9"
+                    text='⚜️ Request Group ⚜️',
+                    url="https://t.me/+l-EIo3NnnJAxODE9"  # Replace with your group link
                 )
             ]])
             
@@ -660,13 +692,13 @@ async def send_movie_update(bot, base_name, is_update=False):
     return None
 
 # ============================================================
-# ============ UPDATED GENERATE MOVIE MESSAGE ================
+# ============ GENERATE MOVIE MESSAGE ========================
 # ============================================================
 
 def generate_movie_message(movie_doc, base_name) -> str:
-    """Generate message with the new simple template."""
+    """Generate message with correct IMDb rating format."""
     
-    # Collect all languages from files
+    # Collect languages from all files
     all_languages = set()
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
@@ -675,17 +707,26 @@ def generate_movie_message(movie_doc, base_name) -> str:
     # If no language found, default to #Hindi
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
-    # Movie details
+    # Movie title and year
     title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
-    imdb_url = movie_doc.get("imdb_url", "#")
     
-    # ===== NEW TEMPLATE AS REQUESTED =====
+    # Rating - format as "6.3/10" or "N/A"
+    rating_raw = movie_doc.get("rating", "N/A")
+    if rating_raw != "N/A":
+        try:
+            r = float(rating_raw)
+            rating_str = f"{r:.1f}/10"
+        except:
+            rating_str = "N/A"
+    else:
+        rating_str = "N/A"
+    
+    # Build final message
     message = f"""
-🎬 {title}{year_str} (Touch to Copy)
-
-⭐ IMDb: <a href='{imdb_url}'>Click Here</a>
+🎬 {title}{year_str}
+⭐ IMDb: {rating_str}
 ➡ Audio Track:- 🔊 {language_str}
 
 Added ✅
