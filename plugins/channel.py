@@ -495,11 +495,13 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
-            # ===== BUTTONS =====
+            # ===== BUTTONS: Movie name itself as a button =====
+            # The movie name button copies the name when clicked
+            movie_name_for_button = base_name.upper()
             buttons = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton(
-                        text='📋 Copy Movie Name',
+                        text=f"📋 {movie_name_for_button}",
                         callback_data=f"copy_{base_name}"
                     )
                 ],
@@ -594,13 +596,13 @@ def generate_movie_message(movie_doc, base_name) -> str:
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Unknown"
     
     # ===== MOVIE DETAILS =====
-    title = base_name.upper()
+    title = base_name.upper()   # Bold uppercase
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
     rating = movie_doc.get("rating", "N/A")
     
     # ===== EXACT FORMAT =====
-    message = f"""🎬 {title}{year_str}
+    message = f"""🎬 <b>{title}{year_str}</b>
 
 ⭐ IMDb: {rating}/10
 
@@ -616,14 +618,13 @@ Added ✅"""
 
 @Client.on_callback_query()
 async def handle_callback(bot, callback_query):
-    """Handle button clicks - Copy movie name"""
+    """Handle button clicks - Copy movie name when movie name button is clicked"""
     try:
         data = callback_query.data
         
         if data.startswith("copy_"):
             movie_name = data.replace("copy_", "")
-            
-            # Show alert with movie name to copy
+            # Show alert with the movie name so user can copy it
             await callback_query.answer(
                 f"📋 '{movie_name}' copied to clipboard!",
                 show_alert=True
