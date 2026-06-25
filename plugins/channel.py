@@ -99,13 +99,10 @@ locks = defaultdict(asyncio.Lock)
 # ============ LANDSCAPE POSTER GENERATOR ============
 
 class LandscapePosterGenerator:
-    """Landscape Poster Generator - Only Landscape, No Vertical Fallback"""
+    """Landscape Poster Generator - Adds a Stylish Frame inside Black Bars"""
     
     @staticmethod
     async def generate_landscape(vertical_poster_url: str, movie_name: str = "") -> Optional[str]:
-        """
-        ਖੜ੍ਹੇ ਪੋਸਟਰ ਨੂੰ ਛੋਟਾ ਕਰਕੇ ਸਾਈਡਾਂ 'ਤੇ ਕਾਲੀ ਜਗ੍ਹਾ (Black Bars) ਪਾ ਕੇ 16:9 Landscape ਬਣਾਉਣਾ
-        """
         try:
             if not vertical_poster_url:
                 return None
@@ -117,15 +114,17 @@ class LandscapePosterGenerator:
             
             encoded_url = urllib.parse.quote_plus(vertical_poster_url)
             
-            # w=1280 & h=720 (16:9 Landscape)
-            # fit=contain (ਪੋਸਟਰ ਛੋਟਾ ਹੋ ਕੇ ਸੈਂਟਰ ਚ ਰਹੇਗਾ)
-            # cbg=000000 (ਸਾਈਡਾਂ ਤੇ ਕਾਲਾ ਰੰਗ ਆਏਗਾ, ਬਲਰ ਹਟਾ ਦਿੱਤਾ ਹੈ)
+            # w=1280&h=720 -> 16:9 Landscape Size
+            # fit=contain -> Poster centers with black bars on sides
+            # border=4&bcol=ffffff -> Adds a 4px white stylish frame around the vertical poster
             landscape_url = (
                 f"https://images.weserv.nl/"
                 f"?url={encoded_url}"
                 f"&w=1280&h=720"
                 f"&fit=contain"
                 f"&cbg=000000"
+                f"&border=4"
+                f"&bcol=ffffff"
                 f"&a=c"
                 f"&q=100"
                 f"&output=jpg"
@@ -134,14 +133,14 @@ class LandscapePosterGenerator:
             async with aiohttp.ClientSession() as session:
                 async with session.head(landscape_url, timeout=10) as response:
                     if response.status == 200:
-                        logger.info(f"✅ Landscape (with Black Bars) generated: {movie_name}")
+                        logger.info(f"✅ Landscape with Stylish Frame generated: {movie_name}")
                         return landscape_url
                     else:
-                        logger.warning(f"⚠️ Landscape generation failed for: {movie_name}")
+                        logger.warning(f"⚠️ Landscape Frame generation failed for: {movie_name}")
                         return None
                     
         except Exception as e:
-            logger.error(f"❌ Error generating landscape: {e}")
+            logger.error(f"❌ Error generating landscape frame: {e}")
             return None
 
 # ============ POSTER FETCHING FUNCTIONS ============
@@ -555,9 +554,10 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
+            # Stylish Animated/Colored Request Button
             buttons = InlineKeyboardMarkup([[
                 InlineKeyboardButton(
-                    text='⚜️ Request Group ⚜️',
+                    text='🔥 𝐌𝐎𝐕𝐈𝐄 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡',
                     url="https://t.me/+l-EIo3NnnJAxODE9"
                 )
             ]])
@@ -635,7 +635,7 @@ def generate_movie_message(movie_doc, base_name) -> str:
     title = base_name.upper()
     year_val = movie_doc.get("year")
     
-    # ਚੈੱਕ ਕਰੋ ਜੇਕਰ ਟਾਈਟਲ ਦੇ ਅੰਦਰ ਪਹਿਲਾਂ ਤੋਂ ਹੀ ਉਹ ਸਾਲ ਮੌਜੂਦ ਹੈ ਤਾਂ ਦੁਬਾਰਾ (year) ਨਾ ਲਿਖੇ
+    # ਜੇਕਰ ਟਾਈਟਲ ਦੇ ਅੰਦਰ ਪਹਿਲਾਂ ਤੋਂ ਹੀ ਸਾਲ ਮੌਜੂਦ ਹੈ (ਜਿਵੇਂ MR X 2026), ਤਾਂ ਦੁਬਾਰਾ ਬਰੈਕਟ (2026) ਨਹੀਂ ਲਿਖੇਗਾ
     if year_val and str(year_val) in title:
         year_str = ""
     else:
