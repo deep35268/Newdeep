@@ -5,7 +5,7 @@ import aiohttp
 from datetime import datetime
 from collections import defaultdict
 import urllib.parse
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Dict, List
 from bs4 import BeautifulSoup
 
 from pyrogram import Client, filters, enums
@@ -96,18 +96,16 @@ EP_ONLY_RANGE = re.compile(r'\b(?:EP|Episode)0*(\d{1,3})\s*-\s*0*(\d{1,3})\b', r
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 locks = defaultdict(asyncio.Lock)
 
-# ============ LANDSCAPE POSTER GENERATOR (No Fixed Size) ============
+# ============ LANDSCAPE POSTER GENERATOR ============
 
 class LandscapePosterGenerator:
-    """Landscape Poster Generator - 16:9 Aspect Ratio"""
+    """Landscape Poster Generator - Only Landscape, No Vertical Fallback"""
     
     @staticmethod
     async def generate_landscape(vertical_poster_url: str, movie_name: str = "") -> Optional[str]:
         """
         Generate Landscape poster from vertical poster
-        - 16:9 aspect ratio (landscape)
-        - Blur effect on extended sides
-        - No fixed size, maintains quality
+        Returns None if cannot generate
         """
         try:
             if not vertical_poster_url:
@@ -120,87 +118,32 @@ class LandscapePosterGenerator:
             
             encoded_url = urllib.parse.quote_plus(vertical_poster_url)
             
-            # Method 1: Using images.weserv.nl
-            # w=0 means auto width, h=0 means auto height
-            # fit=contain maintains aspect ratio with blur background
+            # Generate landscape with blur effect
             landscape_url = (
                 f"https://images.weserv.nl/"
                 f"?url={encoded_url}"
-                f"&w=0"  # Auto width
-                f"&h=0"  # Auto height
-                f"&fit=contain"  # Keep aspect ratio
-                f"&cbg=0a0a0a"  # Dark background
-                f"&a=c"  # Center alignment
-                f"&blur=15"  # Blur effect for background
-                f"&q=100"  # Maximum quality
-                f"&output=jpg"
-                f"&sharp=1"  # Slight sharpening
-            )
-            
-            # Method 2: Alternative with ratio
-            landscape_url_ratio = (
-                f"https://images.weserv.nl/"
-                f"?url={encoded_url}"
                 f"&w=0&h=0"
-                f"&fit=cover"  # Cover the area
-                f"&cbg=000000"
+                f"&fit=contain"
+                f"&cbg=0a0a0a"
                 f"&a=c"
-                f"&blur=12"
+                f"&blur=15"
                 f"&q=100"
                 f"&output=jpg"
+                f"&sharp=1"
             )
             
-            # Test if URL works
+            # Check if URL works
             async with aiohttp.ClientSession() as session:
                 async with session.head(landscape_url, timeout=10) as response:
                     if response.status == 200:
                         logger.info(f"✅ Landscape generated: {movie_name}")
                         return landscape_url
                     else:
-                        # Try alternative
-                        async with session.head(landscape_url_ratio, timeout=10) as response2:
-                            if response2.status == 200:
-                                logger.info(f"✅ Landscape (cover) generated: {movie_name}")
-                                return landscape_url_ratio
-                            
-            # Fallback: Simple version
-            simple_url = (
-                f"https://images.weserv.nl/"
-                f"?url={encoded_url}"
-                f"&w=0&h=0"
-                f"&fit=contain"
-                f"&cbg=black"
-                f"&a=c"
-                f"&blur=10"
-                f"&q=90"
-            )
-            return simple_url
+                        logger.warning(f"⚠️ Landscape generation failed for: {movie_name}")
+                        return None
                     
         except Exception as e:
             logger.error(f"❌ Error generating landscape: {e}")
-            return None
-    
-    @staticmethod
-    async def generate_landscape_gradient(vertical_poster_url: str) -> Optional[str]:
-        """Generate landscape with gradient blur effect"""
-        try:
-            encoded_url = urllib.parse.quote_plus(vertical_poster_url)
-            
-            landscape_url = (
-                f"https://images.weserv.nl/"
-                f"?url={encoded_url}"
-                f"&w=0&h=0"
-                f"&fit=contain"
-                f"&cbg=1a1a2e"  # Dark blue gradient
-                f"&a=c"
-                f"&blur=20"
-                f"&q=100"
-                f"&output=jpg"
-                f"&brightness=5"
-            )
-            return landscape_url
-        except Exception as e:
-            logger.error(f"Gradient landscape error: {e}")
             return None
 
 # ============ POSTER FETCHING FUNCTIONS ============
@@ -218,7 +161,6 @@ async def fetch_free_landscape_poster(query: str) -> Optional[str]:
                 if response.status == 200:
                     html = await response.text()
                     soup = BeautifulSoup(html, 'html.parser')
-                    
                     images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
                     for img in images:
                         src = img.get('src', '')
@@ -226,19 +168,25 @@ async def fetch_free_landscape_poster(query: str) -> Optional[str]:
                             actual_url = src.split('?u=')[1].split('&')[0]
                             actual_url = urllib.parse.unquote(actual_url)
                             if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                                return actual_url
+                                # Verify it's a landscape image
+                                async with aiohttp.ClientSession() as session2:
+                                    async with session2.head(actual_url, timeout=10) as resp:
+                                        if resp.status == 200:
+                                            content_type = resp.headers.get('content-type', '')
+                                            if 'image' in content_type:
+                                                return actual_url
     except Exception as e:
         logger.error(f"Free Scraping Search Error: {e}")
     return None
 
-async def get_landscape_poster(movie_name: str, vertical_poster: Optional[str] = None) -> Optional[str]:
+async def get_landscape_poster_only(movie_name: str, vertical_poster: Optional[str] = None) -> Optional[str]:
     """
-    Main function to get Landscape Poster
+    Get ONLY Landscape Poster
+    Returns None if no landscape found (No vertical fallback)
     Priority:
     1. TMDB Backdrop (Landscape)
-    2. Web Search
-    3. Generate from vertical poster with blur effect
-    4. Default fallback
+    2. Web Search (Landscape)
+    3. None (No vertical poster fallback)
     """
     
     # 1. Try TMDB Backdrop first
@@ -256,28 +204,23 @@ async def get_landscape_poster(movie_name: str, vertical_poster: Optional[str] =
         except Exception as e:
             logger.error(f"TMDB backdrop error: {e}")
     
-    # 2. Try Web Search
+    # 2. Try Web Search for Landscape
     landscape = await fetch_free_landscape_poster(movie_name)
     if landscape:
         logger.info(f"✅ Web Landscape found: {movie_name}")
         return landscape
     
-    # 3. Generate from vertical poster (Landscape with blur effect)
+    # 3. Try to generate from vertical poster (but only if we have one)
     if vertical_poster:
         generator = LandscapePosterGenerator()
-        
-        # Try standard landscape
         landscape = await generator.generate_landscape(vertical_poster, movie_name)
         if landscape:
-            return landscape
-        
-        # Try gradient version
-        landscape = await generator.generate_landscape_gradient(vertical_poster)
-        if landscape:
+            logger.info(f"✅ Generated Landscape from vertical: {movie_name}")
             return landscape
     
-    # 4. Default fallback
-    return NOR_IMG
+    # 4. NO LANDSCAPE FOUND - Return None (No vertical fallback)
+    logger.warning(f"❌ No landscape found for: {movie_name} - Will use NO poster")
+    return None
 
 # ============ CLEANING AND EXTRACTION FUNCTIONS ============
 
@@ -417,7 +360,9 @@ def extract_media_info(filename: str, caption: str):
         "language": language
     }
 
-# ============ MAIN HANDLERS ============
+# ============================================================
+# ============ MAIN HANDLERS ==================================
+# ============================================================
 
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
 async def media_handler(bot, message):
@@ -450,7 +395,6 @@ async def process_and_send_update(bot, filename, caption):
 
         movie_key = f"{base_name.lower()}_{media_info['year'] or ''}"
         
-        # Cache management
         if len(POSTED_MOVIES) > MAX_CACHE_SIZE:
             POSTED_MOVIES.clear()
         
@@ -477,6 +421,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         db.movie_updates = db.db.movie_updates
 
     error_tmdb = False
+    
+    # ===== FILE DATA =====
     file_data = {
         "filename": filename,
         "processed": processed,
@@ -491,14 +437,24 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
 
     try:
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
+        
         if existing_movie:
-            await db.movie_updates.update_one(
-                {"_id": base_name},
-                {"$push": {"files": file_data}}
-            )
-            await send_movie_update(bot, base_name, is_update=True)
+            # ===== UPDATE EXISTING MOVIE =====
+            file_exists = False
+            for f in existing_movie.get("files", []):
+                if f.get("filename") == filename:
+                    file_exists = True
+                    break
+            
+            if not file_exists:
+                await db.movie_updates.update_one(
+                    {"_id": base_name},
+                    {"$push": {"files": file_data}}
+                )
+                await send_movie_update(bot, base_name, is_update=True)
             return
 
+        # ===== GET MOVIE DETAILS =====
         details = {}
         if TMDB_POSTER:
             try:
@@ -511,27 +467,26 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
+        # ===== GENRES =====
         raw_genres = details.get("genres", "N/A")
         if isinstance(raw_genres, str):
             genre_list = [g.strip() for g in raw_genres.split(",")]
             genres = ", ".join(g for g in genre_list if g in STANDARD_GENRES) or "N/A"
         else:
             genres = ", ".join(g for g in raw_genres if g in STANDARD_GENRES) or "N/A"
-            
-        # ============ LANDSCAPE POSTER GENERATION ============
-        final_poster = None
-        backdrop = details.get("backdrop_url")
-        vertical_poster = details.get("poster_url")
         
-        # Get landscape poster
-        final_poster = await get_landscape_poster(base_name, vertical_poster)
+        # ======================================================
+        # ===== LANDSCAPE POSTER ONLY (No Vertical Fallback) ====
+        # ======================================================
+        final_poster = await get_landscape_poster_only(base_name, details.get("poster_url"))
         
-        # If still no poster, use fallback
+        # If NO landscape found, set to None (No poster)
         if not final_poster:
-            final_poster = NOR_IMG or "https://image.tmdb.org/t/p/original/9GBiwvuJahvlfEQtuGhpS384Ei5.jpg"
+            logger.warning(f"⚠️ No landscape poster for: {base_name} - Sending without poster")
+            # Don't use NOR_IMG, keep it None
         
-        logger.info(f"🎬 Poster for {base_name}: {'Landscape' if 'weserv' in final_poster or 'backdrop' in final_poster else 'Standard'}")
-
+        # ======================================================
+        # ===== RATING =====
         rating_val = details.get("rating", "7.2")
         try:
             r = float(rating_val)
@@ -542,10 +497,11 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         except (TypeError, ValueError):
             rating_val = "7.2"
 
+        # ===== SAVE TO DATABASE =====
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster,
+            "poster_url": final_poster,  # Will be None if no landscape
             "genres": genres,
             "rating": rating_val,
             "imdb_url": details.get("url", "") if error_tmdb else details.get("tmdb_url", ""),
@@ -556,7 +512,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
             "is_photo": False,
             "error_tmdb": error_tmdb,
             "is_backdrop": True,
-            "is_landscape": "weserv" in final_poster or "backdrop" in final_poster
+            "is_landscape": final_poster is not None  # True if landscape found
         }
         
         await db.movie_updates.insert_one(movie_doc)
@@ -570,6 +526,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name, proc
         await send_movie_update(bot, base_name, is_update=True)
     except Exception as e:
         logger.exception(f"Error in _process_with_lock: {e}")
+
+# ============================================================
+# ============ SEND MOVIE UPDATE ==============================
+# ============================================================
 
 async def send_movie_update(bot, base_name, is_update=False):
     max_retries = 3
@@ -612,23 +572,29 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except MessageIdInvalid:
                     pass
 
-            if movie_doc.get("poster_url") and not LINK_PREVIEW:
+            # ===== CHECK IF POSTER EXISTS =====
+            poster_url = movie_doc.get("poster_url")
+            
+            if poster_url and not LINK_PREVIEW:
+                # Send with photo
                 msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=movie_doc["poster_url"],
+                    photo=poster_url,
                     caption=text,
                     reply_markup=buttons,
                     parse_mode=enums.ParseMode.HTML
                 )
                 is_photo = True
             else:
+                # Send without photo (text only)
                 send_params = {
                     "chat_id": MOVIE_UPDATE_CHANNEL,
                     "text": text,
                     "reply_markup": buttons,
-                    "parse_mode": enums.ParseMode.HTML
+                    "parse_mode": enums.ParseMode.HTML,
+                    "disable_web_page_preview": True
                 }
-                if movie_doc.get("poster_url") and LINK_PREVIEW:
+                if poster_url and LINK_PREVIEW:
                     send_params["invert_media"] = ABOVE_PREVIEW
                 msg = await bot.send_message(**send_params)
                 is_photo = False
@@ -645,38 +611,73 @@ async def send_movie_update(bot, base_name, is_update=False):
             break
     return None
 
+# ============================================================
+# ============ GENERATE MOVIE MESSAGE =========================
+# ============================================================
+
 def generate_movie_message(movie_doc, base_name) -> str:
+    """Generate message with all qualities grouped together"""
+    
+    # Collect all data from files
     all_languages = set()
     all_qualities = set()
     all_ott = set()
+    file_list = []
     
     for file in movie_doc["files"]:
+        # Language
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
+        
+        # Quality
         if file.get("quality") and file["quality"] != "N/A":
             all_qualities.add(file["quality"])
+        
+        # OTT Platform
         if file.get("ott_platform") and file["ott_platform"] != "N/A":
             all_ott.add(file["ott_platform"])
-
-    language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
-    quality_str = ", ".join(sorted(all_qualities)) if all_qualities else "N/A"
-    ott_str = " | ".join(sorted(all_ott)) if all_ott else "N/A"
+        
+        # File name with quality
+        quality = file.get("quality", "N/A")
+        file_list.append(f"📁 {quality}: <code>{file['filename']}</code>")
     
+    # Sort qualities
+    quality_order = {'480p': 0, '720p': 1, '1080p': 2, '2160p': 3, '4K': 4}
+    all_qualities = sorted(all_qualities, key=lambda x: quality_order.get(x, 99))
+    
+    # Format strings
+    language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
+    quality_str = ", ".join(all_qualities) if all_qualities else "N/A"
+    ott_str = " | ".join(sorted(all_ott)) if all_ott else "N/A"
+    files_str = "\n".join(file_list) if file_list else "No files available"
+    
+    # Movie details
     title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
     rating = movie_doc.get("rating", "7.2")
     genres = movie_doc.get("genres", "N/A")
     imdb_url = movie_doc.get("imdb_url", "#")
+    
+    # Check if poster exists
+    has_poster = movie_doc.get("poster_url") is not None
+    
+    # ===== COMPLETE MESSAGE =====
+    message = f"""
+<b>🎬 {title}{year_str}</b>
 
-    return IMDB_TEMPLATE.format(
-        title=title,
-        year=year_str,
-        rating=rating,
-        languages=language_str,
-        genres=genres,
-        ott_platform=ott_str,
-        quality=quality_str,
-        imdb_url=imdb_url,
-        filename=base_name
-)
+⭐ <b>Rating:</b> {rating}/10
+🎭 <b>Genres:</b> {genres}
+🌐 <b>Languages:</b> {language_str}
+📺 <b>OTT:</b> {ott_str}
+
+📦 <b>Available Qualities:</b> {quality_str}
+
+📁 <b>Files:</b>
+{files_str}
+
+🔗 <b>IMDb:</b> <a href='{imdb_url}'>Click Here</a>
+
+👥 <b>Request Group:</b> @YourGroup
+"""
+    return message
