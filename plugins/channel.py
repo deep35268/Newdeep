@@ -26,7 +26,8 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
-# Cache for posted movies
+# ============ CONFIGURATION & DATA DICTIONARIES ============
+
 POSTED_MOVIES = set()
 MAX_CACHE_SIZE = 500
 
@@ -78,6 +79,8 @@ STANDARD_GENRES = {
     'Drama', 'Family', 'Fantasy', 'Film-Noir', 'History', 'Horror', 'Music',
     'Musical', 'Mystery', 'Romance', 'Sci-Fi', 'Sport', 'Thriller', 'War', 'Western'
 }
+
+# ============ REGEX PATTERNS ============
 
 CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
 NORMALIZE_PATTERN = re.compile(r"[._]+|[()\[\]{}:;'–!,.?_]")
@@ -327,7 +330,7 @@ def extract_media_info(filename: str, caption: str):
     }
 
 # ============================================================
-# ============ MAIN HANDLERS ==================================
+# ============ MAIN EVENT HANDLERS ===========================
 # ============================================================
 
 @Client.on_message(filters.chat(CHANNELS) & MEDIA_FILTER)
@@ -495,8 +498,7 @@ async def send_movie_update(bot, base_name, is_update=False):
 
             text = generate_movie_message(movie_doc, base_name)
             
-            # ===== BUTTONS: Movie name itself as a button =====
-            # The movie name button copies the name when clicked
+            # Button configuration setup
             movie_name_for_button = base_name.upper()
             buttons = InlineKeyboardMarkup([
                 [
@@ -574,62 +576,44 @@ async def send_movie_update(bot, base_name, is_update=False):
     return None
 
 # ============================================================
-# ============ GENERATE MOVIE MESSAGE =========================
+# ============ MESSAGE GENERATION ENGINE =====================
 # ============================================================
 
 def generate_movie_message(movie_doc, base_name) -> str:
-    """
-    Generate message in exact format:
-    🎬 MOVIE NAME (YEAR)
-    ⭐ IMDb: 6.3/10
-    ➡ Audio Track:- 🔊 #Hindi
-    Added ✅
-    """
-    
-    # ===== COLLECT LANGUAGES =====
     all_languages = set()
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
     
-    # Format language string with hashtags
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Unknown"
     
-    # ===== MOVIE DETAILS =====
-    title = base_name.upper()   # Bold uppercase
+    title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
     rating = movie_doc.get("rating", "N/A")
     
-    # ===== EXACT FORMAT =====
-    message = f"""🎬 <b>{title}{year_str}</b>
+    return f"""🎬 <b>{title}{year_str}</b>
 
 ⭐ IMDb: {rating}/10
 
 ➡ Audio Track:- 🔊 {language_str}
 
 Added ✅"""
-    
-    return message
 
 # ============================================================
-# ============ CALLBACK HANDLER ===============================
+# ============ CALLBACK INTERACTION HANDLER ===================
 # ============================================================
 
 @Client.on_callback_query()
 async def handle_callback(bot, callback_query):
-    """Handle button clicks - Copy movie name when movie name button is clicked"""
     try:
         data = callback_query.data
-        
         if data.startswith("copy_"):
             movie_name = data.replace("copy_", "")
-            # Show alert with the movie name so user can copy it
             await callback_query.answer(
-                f"📋 '{movie_name}' copied to clipboard!",
+                f"📋 '{movie_name.upper()}' ready for selection!",
                 show_alert=True
             )
-            
     except Exception as e:
         logger.error(f"Callback error: {e}")
         await callback_query.answer("❌ Error occurred!", show_alert=True)
