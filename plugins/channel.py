@@ -692,27 +692,26 @@ async def send_movie_update(bot, base_name, is_update=False):
     return None
 
 # ============================================================
-# ============ GENERATE MOVIE MESSAGE ========================
+# ============ GENERATE MOVIE MESSAGE (Open Spacing) =========
 # ============================================================
 
 def generate_movie_message(movie_doc, base_name) -> str:
-    """Generate message with correct IMDb rating format."""
+    """Generate message with open spacing (blank lines between each item)."""
     
-    # Collect languages from all files
+    # Collect languages
     all_languages = set()
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
     
-    # If no language found, default to #Hindi
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
-    # Movie title and year
+    # Title & year
     title = base_name.upper()
     year_val = movie_doc.get("year")
     year_str = f" ({year_val})" if year_val else ""
     
-    # Rating - format as "6.3/10" or "N/A"
+    # Rating
     rating_raw = movie_doc.get("rating", "N/A")
     if rating_raw != "N/A":
         try:
@@ -723,12 +722,14 @@ def generate_movie_message(movie_doc, base_name) -> str:
     else:
         rating_str = "N/A"
     
-    # Build final message
-    message = f"""
-🎬 {title}{year_str}
-⭐ IMDb: {rating_str}
-➡ Audio Track:- 🔊 {language_str}
-
-Added ✅
-"""
+    # Build message with blank lines between each section
+    message = (
+        f"🎬 {title}{year_str}\n"
+        f"\n"
+        f"⭐ IMDb: {rating_str}\n"
+        f"\n"
+        f"➡ Audio Track:- 🔊 {language_str}\n"
+        f"\n"
+        f"Added ✅"
+    )
     return message
