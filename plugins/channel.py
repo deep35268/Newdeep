@@ -353,7 +353,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
     except Exception as e:
         logger.error(f"Error in backend lock verification process: {e}")
 
-# ============ SEND MOVIE UPDATE ============
+# ============ SEND MOVIE UPDATE (UPDATED WITH 4 COLOR BUTTONS) ============
 
 async def send_movie_update(bot, base_name, is_update=False):
     try:
@@ -362,12 +362,35 @@ async def send_movie_update(bot, base_name, is_update=False):
             return None
 
         text = generate_movie_message(movie_doc, base_name)
-        buttons = InlineKeyboardMarkup([[InlineKeyboardButton(text='🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
         poster_url = movie_doc.get("poster_url")
 
         if not poster_url:
             logger.info(f"⚠️ Blocked sending post for '{base_name}' because poster_url is missing.")
             return None
+
+        # ========== 🎨 4 ਰੰਗੀਨ (Colorful) ਬਟਨਾਂ ਵਾਲਾ ਲੇਆਉਟ ==========
+        buttons = InlineKeyboardMarkup([
+            # [1st Row] - 4 ਵੱਖ-ਵੱਖ ਰੰਗਾਂ ਵਾਲੇ ਬਟਨ
+            [
+                InlineKeyboardButton("🟢 BUY", callback_data="buy"),
+                InlineKeyboardButton("🔵 QUALITY", callback_data="quality"),
+                InlineKeyboardButton("🟡 LANGUAGE", callback_data="language"),
+                InlineKeyboardButton("🔴 SEASON", callback_data="season")
+            ],
+            # [2nd Row] - 3 ਬਟਨ (ਹੋਰ ਰੰਗ)
+            [
+                InlineKeyboardButton("🟠 INFO", callback_data="info"),
+                InlineKeyboardButton("🟣 SEND ALL", callback_data="send_all"),
+                InlineKeyboardButton("💡 TIPS", callback_data="tips")
+            ],
+            # [3rd Row] - Navigation (ਪੈਗੀਨੇਸ਼ਨ)
+            [
+                InlineKeyboardButton("⬅️ PREV", callback_data="prev_1"),
+                InlineKeyboardButton("📄 1/2", callback_data="page_info"),
+                InlineKeyboardButton("NEXT ➡️", callback_data="next_2")
+            ]
+        ])
+        # ============================================================
 
         sent_msg = None
         if is_update and movie_doc.get("message_id"):
@@ -411,7 +434,7 @@ async def send_movie_update(bot, base_name, is_update=False):
         logger.error(f"Failed to push update layout: {e}")
     return None
 
-# ============ AI DOUBLE CHECK & AUTO CORRECTION ENGINE ============
+# ============ AI DOUBLE CHECK & AUTO CORRECTION ENGINE (FIXED) ============
 
 async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, buttons):
     try:
@@ -430,8 +453,12 @@ async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, 
                 
             live_text = live_msg.caption if live_msg else ""
             
-            if live_text and live_text.strip() == correct_text.strip():
-                return
+            # Normalize both texts to avoid false mismatches due to spaces/newlines
+            def normalize_text(t):
+                return " ".join(t.strip().split())
+            
+            if normalize_text(live_text) == normalize_text(correct_text):
+                return  # No mismatch, skip editing
                 
             logger.info(f"🔎 AI detected a mismatch in post ID {message_id}. Correcting automatically...")
             await bot.edit_message_caption(
@@ -442,7 +469,10 @@ async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, 
                 parse_mode=enums.ParseMode.HTML
                 )
             logger.info(f"✅ AI successfully auto-corrected post ID {message_id}!")
+            
         except MessageNotModified:
+            # This is not an error, just means content was already correct
+            logger.info(f"ℹ️ AI check: Post ID {message_id} already has correct content.")
             pass 
         except FloodWait as e:
             logger.warning(f"AI engine hit floodwait. Sleeping for {e.value} seconds.")
