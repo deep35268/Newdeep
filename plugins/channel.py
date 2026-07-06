@@ -90,33 +90,26 @@ MEDIA_FILTER = filters.document | filters.video | filters.audio
 # ============ AI & OFFICIAL LANDSCAPE VALIDATION SYSTEM ============
 
 async def fetch_cinemeta_ai_poster(query: str, is_series: bool = False) -> Optional[str]:
-    """Cinemeta AI API ਦੀ ਵਰਤੋਂ ਕਰਕੇ ਸਿਰਫ ਅਧਿਕਾਰਤ ਅਤੇ ਅਸਲੀ ਮੂਵੀ ਬੈਕਡ੍ਰੌਪ ਲੱਭਣਾ"""
     try:
         session = await get_session()
         m_type = "series" if is_series else "movie"
         encoded_query = urllib.parse.quote(query)
         
-        # ਸਹੀ ਮੂਵੀ ਮੈਟਾਡਾਟਾ ਆਈਡੀ ਲੱਭਣ ਲਈ ਖੋਜ
         search_url = f"https://v3-cinemeta.strem.io/catalog/{m_type}/top/search={encoded_query}.json"
         async with session.get(search_url, timeout=10) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 metas = data.get("metas", [])
                 if metas:
-                    # ਪਹਿਲੇ ਸਭ ਤੋਂ ਸਹੀ ਮੈਚ ਦੀ ਚੋਣ ਕਰੋ
                     best_match = metas[0]
                     background = best_match.get("background")
-                    
                     if background and any(x in background for x in ["images.metahub.space", "tmdb", "themoviedb"]):
-                        logger.info(f"🤖 AI Verified Official Backdrop: {background}")
                         return background
     except Exception as e:
         logger.error(f"Cinemeta AI Metadata Error: {e}")
     return None
 
 async def get_landscape_poster_only(movie_name: str, is_series: bool = False) -> Optional[str]:
-    """ਸਿਰਫ਼ ਅਤੇ ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਕੱਢੇਗਾ, ਫਾਲਤੂ ਤਸਵੀਰਾਂ ਬਿਲਕੁਲ ਬੰਦ"""
-    # 1. ਪਹਿਲਾਂ TMDB ਤੋਂ ਅਸਲੀ ਬੈਕਡ੍ਰੌਪ ਚੈੱਕ ਕਰੋ
     if LANDSCAPE_POSTER:
         try:
             details = await get_movie_detailsx(movie_name)
@@ -125,17 +118,14 @@ async def get_landscape_poster_only(movie_name: str, is_series: bool = False) ->
                 if "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
-                logger.info(f"🌟 TMDB Backdrop Verified: {backdrop}")
                 return backdrop
         except Exception as e:
             logger.error(f"TMDB backdrop error: {e}")
     
-    # 2. ਜੇਕਰ TMDB 'ਤੇ ਨਾ ਮਿਲੇ, ਤਾਂ Cinemeta AI ਡਾਟਾਬੇਸ ਤੋਂ ਅਸਲੀ ਮੂਵੀ ਬੈਕਗ੍ਰਾਊਂਡ ਚੈੱਕ ਕਰੋ
     ai_backdrop = await fetch_cinemeta_ai_poster(movie_name, is_series)
     if ai_backdrop:
         return ai_backdrop
         
-    # ਜੇਕਰ ਕੋਈ ਵੀ ਅਸਲੀ ਮੂਵੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਦਾ, ਤਾਂ ਕੋਈ ਰੈਂਡਮ ਚੀਜ਼ ਪੋਸਟ ਨਹੀਂ ਹੋਵੇਗੀ (None ਜਾਵੇਗਾ)
     return None
 
 # ============ CLEANING AND EXTRACTION FUNCTIONS ============
@@ -176,18 +166,15 @@ def extract_media_info(filename: str, caption: str):
         tag = "#SERIES"
     
     clean_name = EPISODE_CLEAN_PATTERN.sub(" ", filename_normalized)
+    clean_name = QUALITY_PATTERN.sub(" ", clean_name)
+
     year_match = YEAR_PATTERN.search(clean_name)
     if year_match:
         year = year_match.group(1)
         idx = clean_name.find(year)
         base_raw = clean_name[:idx].strip()
     else:
-        qual_match = QUALITY_PATTERN.search(clean_name)
-        if qual_match:
-            idx = clean_name.lower().find(qual_match.group(0).lower())
-            base_raw = clean_name[:idx].strip()
-        else:
-            base_raw = clean_name
+        base_raw = clean_name
 
     base_name = normalize(remove_ignored_words(base_raw))
     if not base_name:
@@ -270,14 +257,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
     }
 
     try:
-        existing_movie = await db.movie_updates.find_one({"_id": base_name})
-        if existing_movie:
-            file_exists = any(f.get("filename") == filename for f in existing_movie.get("files", []))
-            if not file_exists:
-                await db.movie_updates.update_one({"_id": base_name}, {"$push": {"files": file_data}})
-                await send_movie_update(bot, base_name, is_update=True)
-            return
-
         details = {}
         if TMDB_POSTER:
             try:
@@ -290,10 +269,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
-        # AI ਰਾਹੀਂ ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੱਭੇਗਾ
-        is_series = (media_info["tag"] == "#SERIES")
-        final_poster = await get_landscape_poster_only(base_name, is_series)
-        
         rating_val = "N/A"
         if details.get("rating"):
             try:
@@ -302,11 +277,36 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 pass
 
         year_val = details.get("year") or media_info["year"]
+        is_series = (media_info["tag"] == "#SERIES")
+        final_poster = await get_landscape_poster_only(base_name, is_series)
+
+        existing_movie = await db.movie_updates.find_one({"_id": base_name})
+        if existing_movie:
+            file_exists = any(f.get("filename") == filename for f in existing_movie.get("files", []))
+            
+            update_fields = {}
+            if existing_movie.get("rating") == "N/A" and rating_val != "N/A":
+                update_fields["rating"] = rating_val
+            if not existing_movie.get("year") and year_val:
+                update_fields["year"] = year_val
+            if not existing_movie.get("poster_url") and final_poster:
+                update_fields["poster_url"] = final_poster
+
+            if not file_exists:
+                await db.movie_updates.update_one(
+                    {"_id": base_name}, 
+                    {"$push": {"files": file_data}, "$set": update_fields} if update_fields else {"$push": {"files": file_data}}
+                )
+                await send_movie_update(bot, base_name, is_update=True)
+            elif update_fields:
+                await db.movie_updates.update_one({"_id": base_name}, {"$set": update_fields})
+                await send_movie_update(bot, base_name, is_update=True)
+            return
 
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster, # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਿਆ ਤਾਂ ਇਹ None ਹੋਵੇਗਾ
+            "poster_url": final_poster,
             "rating": rating_val,
             "year": year_val,
             "tag": media_info["tag"],
@@ -338,11 +338,11 @@ async def send_movie_update(bot, base_name, is_update=False):
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton(text='🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
         poster_url = movie_doc.get("poster_url")
 
-        # ਜੇਕਰ ਪੋਸਟ ਨੂੰ ਅਪਡੇਟ (Edit) ਕਰਨਾ ਹੈ
+        sent_msg = None
         if is_update and movie_doc.get("message_id"):
             try:
                 if poster_url:
-                    return await bot.edit_message_caption(
+                    sent_msg = await bot.edit_message_caption(
                         chat_id=MOVIE_UPDATE_CHANNEL,
                         message_id=movie_doc["message_id"],
                         caption=text,
@@ -350,7 +350,7 @@ async def send_movie_update(bot, base_name, is_update=False):
                         parse_mode=enums.ParseMode.HTML
                     )
                 else:
-                    return await bot.edit_message_text(
+                    sent_msg = await bot.edit_message_text(
                         chat_id=MOVIE_UPDATE_CHANNEL,
                         message_id=movie_doc["message_id"],
                         text=text,
@@ -358,43 +358,109 @@ async def send_movie_update(bot, base_name, is_update=False):
                         parse_mode=enums.ParseMode.HTML
                     )
             except MessageNotModified:
-                return movie_doc
+                sent_msg = movie_doc
             except MessageIdInvalid:
                 pass
             except FloodWait as e:
                 await asyncio.sleep(e.value)
                 return await send_movie_update(bot, base_name, is_update)
 
-        # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਮਿਲ ਗਿਆ ਹੈ, ਤਾਂ ਹੀ ਫੋਟੋ ਮੈਸੇਜ ਜਾਵੇਗਾ
-        if poster_url:
-            try:
-                return await bot.send_photo(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=poster_url,
-                    caption=text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML
-                )
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-                return await send_movie_update(bot, base_name, is_update)
-        else:
-            # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਕੋਈ ਰੈਂਡਮ ਫੋਟੋ ਨਹੀਂ, ਸਿੱਧਾ ਟੈਕਸਟ ਮੈਸੇਜ ਜਾਵੇਗਾ
-            try:
-                return await bot.send_message(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    text=text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML,
-                    disable_web_page_preview=True
-                )
-            except FloodWait as e:
-                await asyncio.sleep(e.value)
-                return await send_movie_update(bot, base_name, is_update)
+        if not sent_msg:
+            if poster_url:
+                try:
+                    sent_msg = await bot.send_photo(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        photo=poster_url,
+                        caption=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    return await send_movie_update(bot, base_name, is_update)
+            else:
+                try:
+                    sent_msg = await bot.send_message(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        text=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_web_page_preview=True
+                    )
+                except FloodWait as e:
+                    await asyncio.sleep(e.value)
+                    return await send_movie_update(bot, base_name, is_update)
+
+        # 🛠️ [AI DOUBLE CHECK TRIGGER]: ਪੋਸਟ ਹੁੰਦੇ ਸਾਰ ਹੀ AI ਵੈਰੀਫਿਕੇਸ਼ਨ ਚਲਾਓ
+        if sent_msg and hasattr(sent_msg, 'id'):
+            asyncio.create_task(verify_and_correct_post_with_ai(bot, sent_msg.id, movie_doc, base_name, buttons))
+            return sent_msg
                 
     except Exception as e:
         logger.error(f"Failed to push update layout: {e}")
     return None
+
+# ============ AI DOUBLE CHECK & AUTO CORRECTION ENGINE ============
+
+async def verify_and_correct_post_with_ai(bot, message_id: int, movie_doc: dict, base_name: str, buttons):
+    """ਪੋਸਟ ਹੋਏ ਮੈਸੇਜ ਨੂੰ AI ਰਾਹੀਂ ਦੁਬਾਰਾ ਚੈੱਕ ਕਰਕੇ ਗਲਤੀਆਂ ਨੂੰ ਮੌਕੇ 'ਤੇ ਹੀ ਠੀਕ ਕਰਨਾ"""
+    try:
+        await asyncio.sleep(1) # ਪੋਸਟ ਹੋਣ ਤੋਂ ਤੁਰੰਤ 1 ਸੈਕੰਡ ਬਾਅਦ ਚੈੱਕ ਕਰੋ
+        
+        # 1. ਡਾਟਾਬੇਸ ਤੋਂ ਸਹੀ ਜਾਣਕਾਰੀ ਮੁੜ ਚੈੱਕ ਕਰੋ
+        rating_raw = movie_doc.get("rating", "N/A")
+        rating_str = f"{rating_raw}/10" if rating_raw != "N/A" else "N/A"
+        
+        all_languages = set()
+        for file in movie_doc.get("files", []):
+            if file.get("language") and file["language"] != "N/A":
+                all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
+        language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
+        
+        title = base_name.upper()
+        year_val = str(movie_doc.get("year", "")).strip()
+        year_val = re.sub(r'[()\[\]]', '', year_val)
+        year_str = f" ({year_val})" if year_val and year_val not in title else ""
+        
+        # 2. ਅਸਲੀ ਟੈਕਸਟ ਜੋ ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ
+        correct_text = (
+            f"🎬 <code>{title}{year_str}</code>\n"
+            f"<i>📌 (Touch To Copy)</i>\n\n"
+            f"⭐ IMDb: {rating_str}\n\n"
+            f"➡ Audio Track:- 🔊 {language_str}\n\n"
+            f"Added ✅"
+        )
+        
+        # 3. ਚੈਨਲ ਵਿੱਚੋਂ ਲਾਈਵ ਪੋਸਟ ਨੂੰ ਮੰਗਵਾਓ
+        try:
+            live_msg = await bot.get_messages(chat_id=MOVIE_UPDATE_CHANNEL, message_ids=message_id)
+            live_text = live_msg.caption if movie_doc.get("poster_url") else live_msg.text
+            
+            # 4. ਜੇਕਰ ਲਾਈਵ ਟੈਕਸਟ ਵਿੱਚ ਕੋਈ ਗਲਤੀ ਹੈ, ਤਾਂ AI ਉਸਨੂੰ ਤੁਰੰਤ ਠੀਕ ਕਰੇਗਾ
+            if live_text and live_text.strip() != correct_text.strip():
+                logger.info(f"🔎 AI detected a mismatch in post ID {message_id}. Correcting automatically...")
+                if movie_doc.get("poster_url"):
+                    await bot.edit_message_caption(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        message_id=message_id,
+                        caption=correct_text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                else:
+                    await bot.edit_message_text(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        message_id=message_id,
+                        text=correct_text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                logger.info(f"✅ AI successfully auto-corrected post ID {message_id}!")
+        except Exception as msg_err:
+            logger.error(f"Error while fetching or editing live message for AI verification: {msg_err}")
+            
+    except Exception as e:
+        logger.error(f"Critical error in AI Double-Check Engine: {e}")
 
 # ============ GENERATE MOVIE MESSAGE ============
 
