@@ -415,7 +415,6 @@ async def send_movie_update(bot, base_name, is_update=False):
 
 async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, buttons):
     try:
-        # [FIX] ਤੁਹਾਡੀ ਮੰਗ ਮੁਤਾਬਕ ਸਮਾਂ ਵਧਾ ਕੇ ਪੂਰੇ 20 ਸੈਕਿੰਡ (20 Seconds Delay) ਕਰ ਦਿੱਤਾ ਹੈ
         await asyncio.sleep(20) 
         
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
@@ -472,7 +471,14 @@ def generate_movie_message(movie_doc, base_name) -> str:
     year_val = str(movie_doc.get("year", "")).strip()
     year_val = re.sub(r'[()\[\]]', '', year_val)
     
-    year_str = f" ({html.escape(year_val)})" if year_val and year_val != "None" and year_val not in title else ""
+    # [FIX] ਚੈੱਕ ਕਰੋ ਕਿ ਪੋਸਟ ਸੀਰੀਜ਼ (#SERIES) ਦੀ ਹੈ ਜਾਂ ਨਹੀਂ। ਜੇ ਸੀਰੀਜ਼ ਹੈ ਤਾਂ ਸਾਲ (Year) ਨਾ ਲਗਾਓ।
+    is_series = (movie_doc.get("tag") == "#SERIES")
+    
+    if is_series:
+        year_str = ""  # ਵੈੱਬ ਸੀਰੀਜ਼/ਐਪੀਸੋਡਸ ਲਈ ਸਾਲ ਬਿਲਕੁਲ ਗਾਇਬ
+    else:
+        year_str = f" ({html.escape(year_val)})" if year_val and year_val != "None" and year_val not in title else ""
+    
     rating_raw = movie_doc.get("rating", "N/A")
     rating_str = f"{rating_raw}/10" if rating_raw != "N/A" else "N/A"
     
