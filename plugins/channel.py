@@ -2,7 +2,7 @@ import re
 import logging
 import asyncio
 import aiohttp
-import html  # [FIX] HTML ਅੱਖਰਾਂ ਜਿਵੇਂ <, >, & ਨੂੰ ਸੁਰੱਖਿਅਤ ਕਰਨ ਲਈ
+import html  
 from datetime import datetime
 from collections import defaultdict
 import urllib.parse
@@ -53,7 +53,8 @@ IGNORE_WORDS = {
     "mar", "marathi", "guj", "gujarati", "urd", "urdu", "kor", "korean", "jpn", 
     "japanese", "nf", "netflix", "sonyliv", "sony", "sliv", "amzn", "prime", 
     "primevideo", "hotstar", "zee5", "jio", "jiohotstar", "jhs", "aha", "hbo", "paramount", 
-    "apple", "hoichoi", "sunnxt", "viki", "x264", "x265", "avc", "dd5", "dovi", "hdr"
+    "apple", "hoichoi", "sunnxt", "viki", "x264", "x265", "avc", "dd5", "dovi", "hdr",
+    "10bit", "10-bit", "8bit", "8-bit"
 } | BAD_WORDS
 
 CAPTION_LANGUAGES = {
@@ -80,7 +81,7 @@ NORMALIZE_PATTERN = re.compile(r"[._\-\+]+|[()\[\]{}:;'–!,.?]")
 QUALITY_PATTERN = re.compile(
     r"\b(?:HDCam|HDTC|CamRip|TS|TC|TeleSync|DVDScr|DVDRip|PreDVD|"
     r"WEBRip|WEB-DL|TVRip|HDTV|WEB DL|WebDl|BluRay|BRRip|BDRip|"
-    r"360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip|x264|x265)\b", 
+    r"360p|480p|720p|1080p|2160p|4K|1440p|540p|240p|140p|HEVC|HDRip|x264|x265|10bit|10-bit|8bit)\b", 
     re.IGNORECASE
 )
 YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(19\d{2}|20\d{2})(?![A-Za-z0-9])")
@@ -239,7 +240,6 @@ async def process_and_send_update(bot, filename, caption):
             finally:
                 await asyncio.sleep(12)
                 POSTED_MOVIES.discard(movie_key)
-                # [FIX] ਲੌਕ ਰੇਸ ਕੰਡੀਸ਼ਨ (Race Condition) ਤੋਂ ਬਚਣ ਲਈ ਇੱਥੋਂ ਡਿਲੀਟ ਹਟਾ ਦਿੱਤਾ ਹੈ
                 
     except Exception as e:
         logger.exception(f"Processing execution failed: {e}")
@@ -303,6 +303,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         year_val = year_val or None
         final_poster = await get_landscape_poster_only(base_name, is_series)
 
+        if not final_poster:
+            logger.info(f"❌ Poster NOT found for '{base_name}'. Skipping post creation to avoid text-only updates.")
+            return
+
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
         if existing_movie:
             file_exists = any(f.get("filename") == filename for f in existing_movie.get("files", []))
@@ -361,25 +365,20 @@ async def send_movie_update(bot, base_name, is_update=False):
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton(text='🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
         poster_url = movie_doc.get("poster_url")
 
+        if not poster_url:
+            logger.info(f"⚠️ Blocked sending post for '{base_name}' because poster_url is missing.")
+            return None
+
         sent_msg = None
         if is_update and movie_doc.get("message_id"):
             try:
-                if poster_url:
-                    sent_msg = await bot.edit_message_caption(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        message_id=movie_doc["message_id"],
-                        caption=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                else:
-                    sent_msg = await bot.edit_message_text(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        message_id=movie_doc["message_id"],
-                        text=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
+                sent_msg = await bot.edit_message_caption(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    message_id=movie_doc["message_id"],
+                    caption=text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
             except MessageNotModified:
                 sent_msg = movie_doc
             except MessageIdInvalid:
@@ -389,40 +388,20 @@ async def send_movie_update(bot, base_name, is_update=False):
                 return await send_movie_update(bot, base_name, is_update)
 
         if not sent_msg:
-            if poster_url:
-                try:
-                    sent_msg = await bot.send_photo(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        photo=poster_url,
-                        caption=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                    return await send_movie_update(bot, base_name, is_update)
-                except Exception as img_err:
-                    # [FIX] WEBPAGE_CURL_FAILED ਅਪਵਾਦ (Exception) ਹੈਂਡਲਿੰਗ - ਜੇਕਰ ਲਿੰਕ ਬ੍ਰੋਕਨ ਹੋਵੇ ਤਾਂ ਬਿਨਾਂ ਫੋਟੋ ਦੇ ਭੇਜੋ
-                    logger.warning(f"Poster failed to send ({img_err}). Sending text only fallback.")
-                    sent_msg = await bot.send_message(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        text=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML,
-                        disable_web_page_preview=True
-                    )
-            else:
-                try:
-                    sent_msg = await bot.send_message(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        text=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML,
-                        disable_web_page_preview=True
-                    )
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                    return await send_movie_update(bot, base_name, is_update)
+            try:
+                sent_msg = await bot.send_photo(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    photo=poster_url,
+                    caption=text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                return await send_movie_update(bot, base_name, is_update)
+            except Exception as img_err:
+                logger.error(f"Poster download failed on telegram server side ({img_err}). Skipping post creation entirely.")
+                return None
 
         if sent_msg and hasattr(sent_msg, 'id'):
             asyncio.create_task(verify_and_correct_post_with_ai(bot, sent_msg.id, base_name, buttons))
@@ -436,10 +415,11 @@ async def send_movie_update(bot, base_name, is_update=False):
 
 async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, buttons):
     try:
-        await asyncio.sleep(2) # [FIX] ਡਾਟਾਬੇਸ ਸਿੰਕ ਹੋਣ ਲਈ ਸਮਾਂ ਵਧਾ ਕੇ 2 ਸੈਕਿੰਡ ਕੀਤਾ
+        # [FIX] ਤੁਹਾਡੀ ਮੰਗ ਮੁਤਾਬਕ ਸਮਾਂ ਵਧਾ ਕੇ ਪੂਰੇ 20 ਸੈਕਿੰਡ (20 Seconds Delay) ਕਰ ਦਿੱਤਾ ਹੈ
+        await asyncio.sleep(20) 
         
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
-        if not movie_doc:
+        if not movie_doc or not movie_doc.get("poster_url"):
             return
 
         correct_text = generate_movie_message(movie_doc, base_name)
@@ -449,36 +429,25 @@ async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, 
             if isinstance(live_msg, list) and live_msg:
                 live_msg = live_msg[0]
                 
-            live_text = live_msg.caption if movie_doc.get("poster_url") else live_msg.text
+            live_text = live_msg.caption if live_msg else ""
             
-            # [FIX] MESSAGE_NOT_MODIFIED ਰੋਕਣ ਲਈ - ਜੇ ਟੈਕਸਟ ਪਹਿਲਾਂ ਹੀ ਸੇਮ ਹੈ ਤਾਂ ਰੁਕ ਜਾਓ
             if live_text and live_text.strip() == correct_text.strip():
                 return
                 
             logger.info(f"🔎 AI detected a mismatch in post ID {message_id}. Correcting automatically...")
-            if movie_doc.get("poster_url"):
-                await bot.edit_message_caption(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_id=message_id,
-                    caption=correct_text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML
-                )
-            else:
-                await bot.edit_message_text(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_id=message_id,
-                    text=correct_text,
-                    reply_markup=buttons,
-                    parse_mode=enums.ParseMode.HTML
+            await bot.edit_message_caption(
+                chat_id=MOVIE_UPDATE_CHANNEL,
+                message_id=message_id,
+                caption=correct_text,
+                reply_markup=buttons,
+                parse_mode=enums.ParseMode.HTML
                 )
             logger.info(f"✅ AI successfully auto-corrected post ID {message_id}!")
         except MessageNotModified:
-            pass # [FIX] ਜੇਕਰ ਟੈਲੀਗ੍ਰਾਮ ਫਿਰ ਵੀ ਕਹੇ ਕਿ ਮੈਸੇਜ ਸੇਮ ਹੈ, ਤਾਂ ਐਰਰ ਨਾ ਦਿਓ
+            pass 
         except FloodWait as e:
-            # [FIX] FLOOD_WAIT ਹੈਂਡਲਿੰਗ - ਲਿਮਿਟ ਆਉਣ ਤੇ ਬੋਟ ਰੁਕ ਕੇ ਦੁਬਾਰਾ ਟਰਾਈ ਕਰੇਗਾ
             logger.warning(f"AI engine hit floodwait. Sleeping for {e.value} seconds.")
-            await asyncio.sleep(e.value)
+            await asyncio.sleep(e.value + 5)
             await verify_and_correct_post_with_ai(bot, message_id, base_name, buttons)
         except Exception as msg_err:
             logger.error(f"Error while fetching or editing live message for AI verification: {msg_err}")
@@ -496,8 +465,10 @@ def generate_movie_message(movie_doc, base_name) -> str:
     
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
-    # [FIX] html.escape() ਲਗਾਇਆ ਹੈ ਤਾਂ ਜੋ < ਜਾਂ > ਅੱਖਰਾਂ ਕਰਕੇ HTML ParseMode ਕ੍ਰੈਸ਼ ਨਾ ਹੋਵੇ
     title = html.escape(base_name.upper())
+    title = re.sub(r'\b10BIT\b', '', title, flags=re.IGNORECASE)
+    title = re.sub(r'\s+', ' ', title).strip()
+    
     year_val = str(movie_doc.get("year", "")).strip()
     year_val = re.sub(r'[()\[\]]', '', year_val)
     
