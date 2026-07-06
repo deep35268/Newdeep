@@ -87,56 +87,36 @@ EPISODE_CLEAN_PATTERN = re.compile(r'\b(S\d{1,2}|E\d{1,3}|Ep\d{1,3}|Episode\s*\d
 
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 
-# ============ ਡੂੰਘੀ ਖੋਜ ਪ੍ਰਣਾਲੀ (DEEP HD LANDSCAPE SCRAIPING) ============
+# ============ AI & OFFICIAL LANDSCAPE VALIDATION SYSTEM ============
 
-async def fetch_free_landscape_poster(query: str) -> Optional[str]:
-    """ਇੰਟਰਨੈੱਟ ਤੋਂ ਹਰ ਤਰ੍ਹਾਂ ਦੇ ਅਸਲੀ ਲੈਂਡਸਕੇਪ, ਫੈਨਆਰਟ ਅਤੇ ਬੈਕਡ੍ਰੌਪ ਲੱਭਣ ਲਈ ਅਡਵਾਂਸਡ ਖੋਜ"""
+async def fetch_cinemeta_ai_poster(query: str, is_series: bool = False) -> Optional[str]:
+    """Cinemeta AI API ਦੀ ਵਰਤੋਂ ਕਰਕੇ ਸਿਰਫ ਅਧਿਕਾਰਤ ਅਤੇ ਅਸਲੀ ਮੂਵੀ ਬੈਕਡ੍ਰੌਪ ਲੱਭਣਾ"""
     try:
-        search_url = "https://html.duckduckgo.com/html/"
-        # ਕਈ ਤਰ੍ਹਾਂ ਦੇ ਕੀਵਰਡਸ ਨਾਲ ਖੋਜ ਵਧਾਈ ਗਈ ਤਾਂ ਜੋ ਕੁਝ ਨਾ ਕੁਝ ਜ਼ਰੂਰ ਮਿਲੇ
-        search_queries = [
-            f"{query} movie backdrop widescreen 1920x1080",
-            f"{query} wallpaper fanart landscape original",
-            f"{query} site:themoviedb.org/t/p/original backdrop"
-        ]
-        
         session = await get_session()
-        headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'}
+        m_type = "series" if is_series else "movie"
+        encoded_query = urllib.parse.quote(query)
         
-        for q_string in search_queries:
-            payload = {'q': q_string}
-            async with session.post(search_url, data=payload, headers=headers, timeout=10) as response:
-                if response.status != 200:
-                    continue
+        # ਸਹੀ ਮੂਵੀ ਮੈਟਾਡਾਟਾ ਆਈਡੀ ਲੱਭਣ ਲਈ ਖੋਜ
+        search_url = f"https://v3-cinemeta.strem.io/catalog/{m_type}/top/search={encoded_query}.json"
+        async with session.get(search_url, timeout=10) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                metas = data.get("metas", [])
+                if metas:
+                    # ਪਹਿਲੇ ਸਭ ਤੋਂ ਸਹੀ ਮੈਚ ਦੀ ਚੋਣ ਕਰੋ
+                    best_match = metas[0]
+                    background = best_match.get("background")
                     
-                html = await response.text()
-                soup = BeautifulSoup(html, 'html.parser')
-                images = soup.find_all('img', class_='image-thumb') or soup.find_all('img')
-                
-                for img in images:
-                    src = img.get('src', '')
-                    if "duckduckgo.com/iu/?u=" in src:
-                        actual_url = urllib.parse.unquote(src.split('?u=')[1].split('&')[0])
-                        
-                        # ਫਾਲਤੂ ਆਈਕਨ ਜਾਂ ਛੋਟੀਆਂ ਇਮੇਜਾਂ ਨੂੰ ਫਿਲਟਰ ਕਰਨਾ
-                        if any(ext in actual_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
-                            if any(x in actual_url.lower() for x in ["avatar", "icon", "logo", "poster"]): 
-                                continue # ਖੜ੍ਹੇ ਪੋਸਟਰ ਜਾਂ ਲੋਗੋ ਛੱਡੋ
-                                
-                            await asyncio.sleep(0.1)
-                            try:
-                                async with session.head(actual_url, timeout=5) as resp:
-                                    if resp.status == 200 and 'image' in resp.headers.get('content-type', ''):
-                                        logger.info(f"🎯 Perfect HD Landscape Found: {actual_url}")
-                                        return actual_url
-                            except Exception:
-                                continue
+                    if background and any(x in background for x in ["images.metahub.space", "tmdb", "themoviedb"]):
+                        logger.info(f"🤖 AI Verified Official Backdrop: {background}")
+                        return background
     except Exception as e:
-        logger.error(f"Deep Scraping Search Error: {e}")
+        logger.error(f"Cinemeta AI Metadata Error: {e}")
     return None
 
-async def get_landscape_poster_only(movie_name: str) -> Optional[str]:
-    """ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਕੱਢੇਗਾ, ਬਲਰ ਫ੍ਰੇਮ ਬਿਲਕੁਲ ਬੰਦ"""
+async def get_landscape_poster_only(movie_name: str, is_series: bool = False) -> Optional[str]:
+    """ਸਿਰਫ਼ ਅਤੇ ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਕੱਢੇਗਾ, ਫਾਲਤੂ ਤਸਵੀਰਾਂ ਬਿਲਕੁਲ ਬੰਦ"""
+    # 1. ਪਹਿਲਾਂ TMDB ਤੋਂ ਅਸਲੀ ਬੈਕਡ੍ਰੌਪ ਚੈੱਕ ਕਰੋ
     if LANDSCAPE_POSTER:
         try:
             details = await get_movie_detailsx(movie_name)
@@ -145,17 +125,17 @@ async def get_landscape_poster_only(movie_name: str) -> Optional[str]:
                 if "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
-                logger.info(f"🌟 TMDB Backdrop Loaded: {backdrop}")
+                logger.info(f"🌟 TMDB Backdrop Verified: {backdrop}")
                 return backdrop
         except Exception as e:
             logger.error(f"TMDB backdrop error: {e}")
     
-    # ਜੇ TMDB 'ਤੇ ਨਾ ਮਿਲੇ, ਤਾਂ ਵੈੱਬ 'ਤੇ ਡੂੰਘੀ ਖੋਜ ਕਰੋ
-    landscape = await fetch_free_landscape_poster(movie_name)
-    if landscape:
-        return landscape
+    # 2. ਜੇਕਰ TMDB 'ਤੇ ਨਾ ਮਿਲੇ, ਤਾਂ Cinemeta AI ਡਾਟਾਬੇਸ ਤੋਂ ਅਸਲੀ ਮੂਵੀ ਬੈਕਗ੍ਰਾਊਂਡ ਚੈੱਕ ਕਰੋ
+    ai_backdrop = await fetch_cinemeta_ai_poster(movie_name, is_series)
+    if ai_backdrop:
+        return ai_backdrop
         
-    # [ਬਦਲਾਅ]: ਜੇ ਕੁਝ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਕੋਈ ਬਲਰ ਪੋਸਟਰ ਨਹੀਂ ਬਣਾਉਣਾ, ਸਿੱਧਾ ਨੱਲ (None) ਭੇਜੋ
+    # ਜੇਕਰ ਕੋਈ ਵੀ ਅਸਲੀ ਮੂਵੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਦਾ, ਤਾਂ ਕੋਈ ਰੈਂਡਮ ਚੀਜ਼ ਪੋਸਟ ਨਹੀਂ ਹੋਵੇਗੀ (None ਜਾਵੇਗਾ)
     return None
 
 # ============ CLEANING AND EXTRACTION FUNCTIONS ============
@@ -310,8 +290,9 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         if not TMDB_POSTER or error_tmdb or not details:
             details = await get_movie_details(base_name) or {}
 
-        # ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੱਭੇਗਾ
-        final_poster = await get_landscape_poster_only(base_name)
+        # AI ਰਾਹੀਂ ਸਿਰਫ਼ ਅਸਲੀ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਲੱਭੇਗਾ
+        is_series = (media_info["tag"] == "#SERIES")
+        final_poster = await get_landscape_poster_only(base_name, is_series)
         
         rating_val = "N/A"
         if details.get("rating"):
@@ -325,7 +306,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster, # ਇਹ None ਹੋ ਸਕਦਾ ਹੈ ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਨਾ ਮਿਲੇ
+            "poster_url": final_poster, # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਿਆ ਤਾਂ ਇਹ None ਹੋਵੇਗਾ
             "rating": rating_val,
             "year": year_val,
             "tag": media_info["tag"],
@@ -357,7 +338,7 @@ async def send_movie_update(bot, base_name, is_update=False):
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton(text='🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
         poster_url = movie_doc.get("poster_url")
 
-        # ਜੇਕਰ ਅਪਡੇਟ (Edit) ਕਰਨਾ ਹੈ
+        # ਜੇਕਰ ਪੋਸਟ ਨੂੰ ਅਪਡੇਟ (Edit) ਕਰਨਾ ਹੈ
         if is_update and movie_doc.get("message_id"):
             try:
                 if poster_url:
@@ -384,7 +365,7 @@ async def send_movie_update(bot, base_name, is_update=False):
                 await asyncio.sleep(e.value)
                 return await send_movie_update(bot, base_name, is_update)
 
-        # [ਸੁਧਾਰ]: ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਮਿਲ ਗਿਆ ਹੈ, ਤਾਂ ਫੋਟੋ ਮੈਸੇਜ ਭੇਜੋ
+        # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਮਿਲ ਗਿਆ ਹੈ, ਤਾਂ ਹੀ ਫੋਟੋ ਮੈਸੇਜ ਜਾਵੇਗਾ
         if poster_url:
             try:
                 return await bot.send_photo(
@@ -398,7 +379,7 @@ async def send_movie_update(bot, base_name, is_update=False):
                 await asyncio.sleep(e.value)
                 return await send_movie_update(bot, base_name, is_update)
         else:
-            # [ਬਦਲਾਅ]: ਜੇਕਰ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਬਿਨਾਂ ਪੋਸਟਰ ਤੋਂ ਸਿਰਫ਼ ਸੁੰਦਰ ਟੈਕਸਟ ਮੈਸੇਜ ਭੇਜੋ
+            # ਜੇਕਰ ਅਸਲੀ ਪੋਸਟਰ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਕੋਈ ਰੈਂਡਮ ਫੋਟੋ ਨਹੀਂ, ਸਿੱਧਾ ਟੈਕਸਟ ਮੈਸੇਜ ਜਾਵੇਗਾ
             try:
                 return await bot.send_message(
                     chat_id=MOVIE_UPDATE_CHANNEL,
