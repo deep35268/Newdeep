@@ -2,6 +2,7 @@ import re
 import logging
 import asyncio
 import aiohttp
+import html  # [FIX] HTML ਅੱਖਰਾਂ ਜਿਵੇਂ <, >, & ਨੂੰ ਸੁਰੱਖਿਅਤ ਕਰਨ ਲਈ
 from datetime import datetime
 from collections import defaultdict
 import urllib.parse
@@ -137,16 +138,15 @@ def normalize(s: str) -> str:
     s = NORMALIZE_PATTERN.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
 
-# ==== FIX 1: REPLACED remove_ignored_words WITH strip_trailing_ignored_words ====
-def strip_trailing_ignored_words(text: str) -> str:
-    """ਆਖਰੀ ਤੋਂ Ignore Words ਹਟਾਓ, ਪਰ Title ਨੂੰ ਵਿਚਕਾਰੋਂ ਨਾ ਕੱਟੋ"""
+def remove_ignored_words(text: str) -> str:
     IGNORE_WORDS_LOWER = {w.lower() for w in IGNORE_WORDS}
     words = text.split()
-    # ਆਖਰੀ ਤੋਂ ਉਦੋਂ ਤੱਕ ਹਟਾਓ ਜਦੋਂ ਤੱਕ Ignore Words ਖਤਮ ਨਾ ਹੋ ਜਾਣ
-    while words and words[-1].lower() in IGNORE_WORDS_LOWER:
-        words.pop()
-    return " ".join(words)
-# ==============================================================
+    cleaned_words = []
+    for word in words:
+        if word.lower() in IGNORE_WORDS_LOWER:
+            break
+        cleaned_words.append(word)
+    return " ".join(cleaned_words)
 
 def extract_media_info(filename: str, caption: str):
     filename_cleaned = clean_mentions_links(filename)
@@ -177,10 +177,7 @@ def extract_media_info(filename: str, caption: str):
     else:
         base_raw = clean_name
 
-    # ==== FIX 1 APPLIED HERE ====
-    base_name = normalize(strip_trailing_ignored_words(base_raw))
-    # ============================
-    
+    base_name = normalize(remove_ignored_words(base_raw))
     if not base_name:
         base_name = filename_normalized
 
@@ -242,8 +239,7 @@ async def process_and_send_update(bot, filename, caption):
             finally:
                 await asyncio.sleep(12)
                 POSTED_MOVIES.discard(movie_key)
-                if base_name in locks:
-                    del locks[base_name]
+                # [FIX] ਲੌਕ ਰੇਸ ਕੰਡੀਸ਼ਨ (Race Condition) ਤੋਂ ਬਚਣ ਲਈ ਇੱਥੋਂ ਡਿਲੀਟ ਹਟਾ ਦਿੱਤਾ ਹੈ
                 
     except Exception as e:
         logger.exception(f"Processing execution failed: {e}")
@@ -282,15 +278,11 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             except ValueError:
                 pass
 
-        # ==== FIX 2: YEAR PRIORITY REVERSED FOR SERIES ====
-        is_series = (media_info["tag"] == "#SERIES")
-        year_val = None
-
-        # 1. TMDB details (Highest Priority)
-        if details.get("year"):
+        year_val = media_info["year"]
+        if not year_val and details.get("year"):
             year_val = str(details.get("year")).strip()
         
-        # 2. Cinemeta direct search for Series if TMDB failed
+        is_series = (media_info["tag"] == "#SERIES")
         if not year_val and is_series:
             try:
                 session = await get_session()
@@ -307,12 +299,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                                 year_val = year_match.group(1)
             except Exception as e:
                 logger.error(f"Error fetching series year from Cinemeta: {e}")
-        
-        # 3. Filename fallback (Lowest Priority)
-        if not year_val and media_info.get("year"):
-            year_val = media_info["year"]
-        # ================================================
 
+        year_val = year_val or None
         final_poster = await get_landscape_poster_only(base_name, is_series)
 
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
@@ -374,54 +362,32 @@ async def send_movie_update(bot, base_name, is_update=False):
         poster_url = movie_doc.get("poster_url")
 
         sent_msg = None
-        
-        # ==== FIX 3: VERIFY MESSAGE EXISTS BEFORE EDITING ====
         if is_update and movie_doc.get("message_id"):
             try:
-                # ਚੈੱਕ ਕਰੋ ਕਿ ਮੈਸੇਜ ਅਸਲ ਵਿੱਚ ਚੈਨਲ 'ਚ ਮੌਜੂਦ ਹੈ
-                existing_msg = await bot.get_messages(
-                    chat_id=MOVIE_UPDATE_CHANNEL,
-                    message_ids=movie_doc["message_id"]
-                )
-                
-                # ਜੇਕਰ ਮੈਸੇਜ ਮਿਲ ਗਿਆ, ਤਾਂ ਐਡਿਟ ਕਰੋ
-                if existing_msg:
-                    if poster_url:
-                        sent_msg = await bot.edit_message_caption(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            message_id=movie_doc["message_id"],
-                            caption=text,
-                            reply_markup=buttons,
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                    else:
-                        sent_msg = await bot.edit_message_text(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            message_id=movie_doc["message_id"],
-                            text=text,
-                            reply_markup=buttons,
-                            parse_mode=enums.ParseMode.HTML
-                        )
+                if poster_url:
+                    sent_msg = await bot.edit_message_caption(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        message_id=movie_doc["message_id"],
+                        caption=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
                 else:
-                    # ਜੇਕਰ ਮੈਸੇਜ ਨਾ ਮਿਲੇ, ਤਾਂ ਨਵਾਂ ਭੇਜੋ
-                    sent_msg = None
-                    
+                    sent_msg = await bot.edit_message_text(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        message_id=movie_doc["message_id"],
+                        text=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
             except MessageNotModified:
-                # ਜੇਕਰ ਕੋਈ ਬਦਲਾਅ ਨਾ ਹੋਵੇ, ਤਾਂ ਪੁਰਾਣਾ ਮੈਸੇਜ ਹੀ return ਕਰੋ
                 sent_msg = movie_doc
-            except (MessageIdInvalid, Exception) as e:
-                # MessageIdInvalid ਜਾਂ ਕੋਈ ਹੋਰ ਐਰਰ (ਜਿਵੇਂ ਮੈਸੇਜ ਮਿਟ ਗਿਆ) -> ਨਵਾਂ ਭੇਜੋ
-                if "MessageNotModified" not in str(e):
-                    sent_msg = None
-                else:
-                    sent_msg = movie_doc
-            # FloodWait handle ਕਰਨਾ ਯਾਦ ਰੱਖੋ
+            except MessageIdInvalid:
+                pass
             except FloodWait as e:
                 await asyncio.sleep(e.value)
                 return await send_movie_update(bot, base_name, is_update)
-        # =====================================================
 
-        # ਨਵਾਂ ਮੈਸੇਜ ਭੇਜੋ (ਜੇਕਰ update ਨਹੀਂ ਹੈ ਜਾਂ edit ਫੇਲ ਹੋ ਗਿਆ ਹੈ)
         if not sent_msg:
             if poster_url:
                 try:
@@ -435,6 +401,16 @@ async def send_movie_update(bot, base_name, is_update=False):
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
                     return await send_movie_update(bot, base_name, is_update)
+                except Exception as img_err:
+                    # [FIX] WEBPAGE_CURL_FAILED ਅਪਵਾਦ (Exception) ਹੈਂਡਲਿੰਗ - ਜੇਕਰ ਲਿੰਕ ਬ੍ਰੋਕਨ ਹੋਵੇ ਤਾਂ ਬਿਨਾਂ ਫੋਟੋ ਦੇ ਭੇਜੋ
+                    logger.warning(f"Poster failed to send ({img_err}). Sending text only fallback.")
+                    sent_msg = await bot.send_message(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        text=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML,
+                        disable_web_page_preview=True
+                    )
             else:
                 try:
                     sent_msg = await bot.send_message(
@@ -460,7 +436,7 @@ async def send_movie_update(bot, base_name, is_update=False):
 
 async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, buttons):
     try:
-        await asyncio.sleep(1) 
+        await asyncio.sleep(2) # [FIX] ਡਾਟਾਬੇਸ ਸਿੰਕ ਹੋਣ ਲਈ ਸਮਾਂ ਵਧਾ ਕੇ 2 ਸੈਕਿੰਡ ਕੀਤਾ
         
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
         if not movie_doc:
@@ -475,25 +451,35 @@ async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, 
                 
             live_text = live_msg.caption if movie_doc.get("poster_url") else live_msg.text
             
-            if live_text and live_text.strip() != correct_text.strip():
-                logger.info(f"🔎 AI detected a mismatch in post ID {message_id}. Correcting automatically...")
-                if movie_doc.get("poster_url"):
-                    await bot.edit_message_caption(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        message_id=message_id,
-                        caption=correct_text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                else:
-                    await bot.edit_message_text(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        message_id=message_id,
-                        text=correct_text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                logger.info(f"✅ AI successfully auto-corrected post ID {message_id}!")
+            # [FIX] MESSAGE_NOT_MODIFIED ਰੋਕਣ ਲਈ - ਜੇ ਟੈਕਸਟ ਪਹਿਲਾਂ ਹੀ ਸੇਮ ਹੈ ਤਾਂ ਰੁਕ ਜਾਓ
+            if live_text and live_text.strip() == correct_text.strip():
+                return
+                
+            logger.info(f"🔎 AI detected a mismatch in post ID {message_id}. Correcting automatically...")
+            if movie_doc.get("poster_url"):
+                await bot.edit_message_caption(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    message_id=message_id,
+                    caption=correct_text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
+            else:
+                await bot.edit_message_text(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    message_id=message_id,
+                    text=correct_text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
+            logger.info(f"✅ AI successfully auto-corrected post ID {message_id}!")
+        except MessageNotModified:
+            pass # [FIX] ਜੇਕਰ ਟੈਲੀਗ੍ਰਾਮ ਫਿਰ ਵੀ ਕਹੇ ਕਿ ਮੈਸੇਜ ਸੇਮ ਹੈ, ਤਾਂ ਐਰਰ ਨਾ ਦਿਓ
+        except FloodWait as e:
+            # [FIX] FLOOD_WAIT ਹੈਂਡਲਿੰਗ - ਲਿਮਿਟ ਆਉਣ ਤੇ ਬੋਟ ਰੁਕ ਕੇ ਦੁਬਾਰਾ ਟਰਾਈ ਕਰੇਗਾ
+            logger.warning(f"AI engine hit floodwait. Sleeping for {e.value} seconds.")
+            await asyncio.sleep(e.value)
+            await verify_and_correct_post_with_ai(bot, message_id, base_name, buttons)
         except Exception as msg_err:
             logger.error(f"Error while fetching or editing live message for AI verification: {msg_err}")
             
@@ -510,11 +496,12 @@ def generate_movie_message(movie_doc, base_name) -> str:
     
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     
-    title = base_name.upper()
+    # [FIX] html.escape() ਲਗਾਇਆ ਹੈ ਤਾਂ ਜੋ < ਜਾਂ > ਅੱਖਰਾਂ ਕਰਕੇ HTML ParseMode ਕ੍ਰੈਸ਼ ਨਾ ਹੋਵੇ
+    title = html.escape(base_name.upper())
     year_val = str(movie_doc.get("year", "")).strip()
     year_val = re.sub(r'[()\[\]]', '', year_val)
     
-    year_str = f" ({year_val})" if year_val and year_val != "None" and year_val not in title else ""
+    year_str = f" ({html.escape(year_val)})" if year_val and year_val != "None" and year_val not in title else ""
     rating_raw = movie_doc.get("rating", "N/A")
     rating_str = f"{rating_raw}/10" if rating_raw != "N/A" else "N/A"
     
