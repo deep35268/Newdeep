@@ -15,7 +15,7 @@ from bs4 import BeautifulSoup
 from PIL import Image, ImageDraw, ImageFont
 
 from pyrogram import Client, filters, enums
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
 from pymongo.errors import PyMongoError, DuplicateKeyError
 
@@ -28,7 +28,7 @@ from Script import script
 from info import (
     CHANNELS, MOVIE_UPDATE_CHANNEL, LINK_PREVIEW, ABOVE_PREVIEW, 
     BAD_WORDS, LANDSCAPE_POSTER, TMDB_POSTER, NOR_IMG, IMDB_TEMPLATE,
-    TMDB_API_KEY  # ✅ API Key info.py ਤੋਂ import ਕੀਤੀ
+    TMDB_API_KEY
 )
 
 logger = logging.getLogger(__name__)
@@ -107,14 +107,6 @@ QUALITY_PATTERN = re.compile(
 YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(19\d{2}|20\d{2})(?![A-Za-z0-9])")
 EPISODE_CLEAN_PATTERN = re.compile(r'\b(S\d{1,2}|E\d{1,3}|Ep\d{1,3}|Episode\s*\d{1,3}|Season\s*\d{1,2}|Part\s*\d{1,2}|\d{1,2}\s*-\s*\d{1,2}|\d{1,3}\s*to\s*\d{1,3})\b', re.IGNORECASE)
 
-# ============ LANGUAGE EXTRACTION WITH REGEX WORD BOUNDARIES ============
-LANG_PATTERN = re.compile(
-    r'\b(?:hin|hindi|tam|tamil|kan|kannada|tel|telugu|mal|malayalam|'
-    r'eng|english|pun|punjabi|ben|bengali|mar|marathi|guj|gujarati|'
-    r'urd|urdu|kor|korean|jpn|japanese)\b',
-    re.IGNORECASE
-)
-
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 
 # ============ NEW: CREATE TITLE-ONLY POSTER ============
@@ -133,23 +125,22 @@ async def create_title_only_poster(backdrop_url: str, title: str) -> Optional[by
                 img_data = await resp.read()
         
         # 2. PIL Image ਖੋਲ੍ਹੋ
-        image = Image.open(io.BytesIO(img_data)).convert("RGB")
+        image = Image.open(io.BytesIO(img_data)).convert("RGBA")
         img_w, img_h = image.size
         
         # 3. Draw object
         draw = ImageDraw.Draw(image)
         
-        # 4. ਫੌਂਟ ਲੋਡ ਕਰੋ (Bold, ਵੱਡਾ) - Heroku 'ਤੇ DejaVu ਉਪਲਬਧ ਹੈ
+        # 4. ਫੌਂਟ ਲੋਡ ਕਰੋ (Bold, ਵੱਡਾ)
         try:
             font_size = int(img_w * 0.10)  # 10% of width
             font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
         except:
-            # Fallback to default font if not available
             font = ImageFont.load_default()
-            font_size = 20  # default size
+            font_size = 20
         
-        # 5. ਟਾਈਟਲ ਨੂੰ wrap ਕਰੋ (ਜੇ ਬਹੁਤ ਲੰਮਾ ਹੋਵੇ)
-        wrapped_title = textwrap.fill(title.upper(), width=14)  # max 14 chars per line
+        # 5. ਟਾਈਟਲ ਨੂੰ wrap ਕਰੋ
+        wrapped_title = textwrap.fill(title.upper(), width=14)
         
         # 6. ਟੈਕਸਟ ਦਾ size ਮਾਪੋ
         bbox = draw.textbbox((0, 0), wrapped_title, font=font)
@@ -158,31 +149,25 @@ async def create_title_only_poster(backdrop_url: str, title: str) -> Optional[by
         
         # 7. Center coordinates
         x = (img_w - text_w) // 2
-        y = (img_h - text_h) // 2 - int(text_h * 0.2)  # slightly above center
+        y = (img_h - text_h) // 2 - int(text_h * 0.2)
         
-        # 8. ਪਿਛੋਕੜ 'ਤੇ ਅਰਧ-ਪਾਰਦਰਸ਼ੀ ਕਾਲੀ ਪੱਟੀ (rectangle) ਲਗਾਓ ਤਾਂ ਜੋ ਟੈਕਸਟ ਸਾਫ਼ ਦਿਖੇ
-        padding = 25
-        # For semi-transparent overlay, we need to create a separate layer, but simpler: draw black rectangle with alpha
-        # PIL does not support alpha directly on RGB; we can create a new image or use rectangle with fill=(0,0,0) and then adjust opacity via Image.blend? 
-        # Simpler: draw a black rectangle with opacity using ImageColor? Actually we can create a new layer:
-        overlay = Image.new('RGBA', (img_w, img_h), (0,0,0,0))
+        # 8. Background overlay (semi-transparent black for readability)
+        overlay = Image.new('RGBA', (img_w, img_h), (0, 0, 0, 0))
         overlay_draw = ImageDraw.Draw(overlay)
+        padding = 25
         overlay_draw.rectangle(
             [x - padding, y - padding, x + text_w + padding, y + text_h + padding],
-            fill=(0, 0, 0, 170)  # black with opacity 170/255
+            fill=(0, 0, 0, 170)
         )
-        # Blend overlay onto image
-        image = image.convert('RGBA')
         image = Image.alpha_composite(image, overlay)
-        image = image.convert('RGB')  # back to RGB for saving
-        draw = ImageDraw.Draw(image)  # recreate draw after conversion
+        draw = ImageDraw.Draw(image)
         
-        # 9. ਚਿੱਟੇ ਰੰਗ ਵਿੱਚ ਟੈਕਸਟ ਲਿਖੋ (ਇਸ ਵਾਰ overlay ਦੇ ਉੱਪਰ)
-        draw.text((x, y), wrapped_title, font=font, fill=(255, 255, 255))
+        # 9. White text
+        draw.text((x, y), wrapped_title, font=font, fill=(255, 255, 255, 255))
         
-        # 10. Bytes ਵਿੱਚ ਆਊਟਪੁੱਟ
+        # 10. Bytes output
         output = io.BytesIO()
-        image.save(output, format="JPEG", quality=92)
+        image.convert("RGB").save(output, format="JPEG", quality=92)
         return output.getvalue()
         
     except Exception as e:
@@ -250,10 +235,8 @@ def remove_ignored_words(text: str) -> str:
     return " ".join(cleaned_words)
 
 def extract_languages_from_text(text: str) -> set:
-    """Regex word boundaries ਨਾਲ ਭਾਸ਼ਾਵਾਂ ਲੱਭੋ — ਗਲਤ ਸਬ-ਸਟ੍ਰਿੰਗ ਨਾਲ ਗੜਬੜੀ ਨਹੀਂ ਹੋਵੇਗੀ"""
     found = set()
     text_lower = text.lower()
-    # ਪਹਿਲਾਂ CAPTION_LANGUAGES ਦੀਆਂ ਕੁੰਜੀਆਂ ਨਾਲ word boundary match
     for lang_key, lang_name in CAPTION_LANGUAGES.items():
         if re.search(rf'\b{re.escape(lang_key)}\b', text_lower):
             found.add(lang_name)
@@ -271,7 +254,6 @@ def extract_media_info(filename: str, caption: str):
     quality_str = ", ".join(quality) if quality else "N/A"
     ott_platform = extract_ott_platform(f"{filename_normalized} {caption_clean}")
 
-    # ✅ Regex word boundaries ਨਾਲ ਭਾਸ਼ਾ ਡਿਟੈਕਟ ਕਰੋ
     lang_set = set()
     lang_set.update(extract_languages_from_text(filename_normalized))
     lang_set.update(extract_languages_from_text(caption_clean))
@@ -294,6 +276,11 @@ def extract_media_info(filename: str, caption: str):
     base_name = normalize(remove_ignored_words(base_raw))
     if not base_name:
         base_name = filename_normalized
+
+    # [FIX] For series, remove season number to group all episodes together
+    if tag == "#SERIES":
+        base_name = re.sub(r'\bS\d{1,2}\b', '', base_name, flags=re.IGNORECASE).strip()
+        base_name = normalize(base_name)
 
     return {
         "processed": filename_normalized,
@@ -381,7 +368,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 if not details or details.get("error"):
                     error_tmdb = True
                 else:
-                    # TMDB ਤੋਂ original_language ਲਓ
                     orig_lang = details.get("original_language") or details.get("lang")
                     if orig_lang:
                         tmdb_language_override = TMDB_LANG_MAP.get(orig_lang.lower())
@@ -422,28 +408,24 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
 
         year_val = year_val or None
         
-        # ✅ Language: TMDB original_language ਨੂੰ ਪ੍ਰਾਥਮਿਕਤਾ ਦਿਓ, ਫਿਰ file/caption ਤੋਂ
+        # ✅ Language: TMDB original_language ਨੂੰ ਪ੍ਰਾਥਮਿਕਤਾ
         final_language = media_info["language"]
         if tmdb_language_override and tmdb_language_override != "N/A":
-            # ਜੇ TMDB ਭਾਸ਼ਾ ਮਿਲੀ ਹੈ, ਤਾਂ ਉਸ ਨੂੰ ਪਹਿਲ ਦਿਓ
             if final_language == "N/A" or final_language == "Hindi" or len(final_language.split(",")) <= 1:
                 final_language = tmdb_language_override
             else:
-                # ਜੇ ਪਹਿਲਾਂ ਤੋਂ ਹੀ ਕਈ ਭਾਸ਼ਾਵਾਂ ਹਨ, ਤਾਂ TMDB ਵਾਲੀ ਨੂੰ ਜੋੜ ਦਿਓ (ਜੇ ਡੁਪਲੀਕੇਟ ਨਾ ਹੋਵੇ)
                 existing = set(l.strip() for l in final_language.split(","))
                 existing.add(tmdb_language_override)
                 final_language = ", ".join(sorted(existing))
         elif final_language == "N/A":
-            # ਕੋਈ ਭਾਸ਼ਾ ਨਾ ਮਿਲੀ, ਤਾਂ ਡਿਫਾਲਟ Hindi ਲਗਾਓ
             final_language = "Hindi"
         
-        # Update file_data with final language
         file_data["language"] = final_language
         
         final_poster = await get_landscape_poster_only(base_name, is_series)
 
         if not final_poster:
-            logger.info(f"❌ Poster NOT found for '{base_name}'. Skipping post creation to avoid text-only updates.")
+            logger.info(f"❌ Poster NOT found for '{base_name}'. Skipping post creation.")
             return
 
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
@@ -457,7 +439,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 update_fields["year"] = year_val
             if not existing_movie.get("poster_url") and final_poster:
                 update_fields["poster_url"] = final_poster
-            # ✅ Language update ਜੇਕਰ ਪੁਰਾਣੀ language N/A ਹੈ ਜਾਂ ਗਲਤ ਹੈ
             if existing_movie.get("language") != final_language and final_language != "N/A":
                 update_fields["language"] = final_language
 
@@ -475,7 +456,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         movie_doc = {
             "_id": base_name,
             "files": [file_data],
-            "poster_url": final_poster,   # ਇਹ backdrop URL ਹੈ (ਲੈਂਡਸਕੇਪ)
+            "poster_url": final_poster,
             "rating": rating_val,
             "year": year_val,
             "tag": media_info["tag"],
@@ -496,7 +477,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
     except Exception as e:
         logger.error(f"Error in backend lock verification process: {e}")
 
-# ============ SEND MOVIE UPDATE ============
+# ============ SEND MOVIE UPDATE (FIXED FOR SERIES) ============
 
 async def send_movie_update(bot, base_name, is_update=False):
     try:
@@ -506,7 +487,7 @@ async def send_movie_update(bot, base_name, is_update=False):
 
         text = generate_movie_message(movie_doc, base_name)
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton(text='🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
-        poster_url = movie_doc.get("poster_url")  # ਇਹ backdrop URL ਹੋਣਾ ਚਾਹੀਦਾ ਹੈ (landscape)
+        poster_url = movie_doc.get("poster_url")
 
         if not poster_url:
             logger.info(f"⚠️ Blocked sending post for '{base_name}' because poster_url is missing.")
@@ -514,55 +495,42 @@ async def send_movie_update(bot, base_name, is_update=False):
 
         sent_msg = None
 
-        # ========== NEW: Generate title-only poster for new posts ==========
-        if not is_update:
-            # ਪਹਿਲੀ ਵਾਰ ਪੋਸਟ ਕਰ ਰਹੇ ਹਾਂ: backdrop 'ਤੇ ਟਾਈਟਲ ਲਿਖ ਕੇ ਭੇਜੋ
+        # --- UPDATE CASE (New Episode) ---
+        if is_update and movie_doc.get("message_id"):
+            # Generate new poster with title overlay
             image_bytes = await create_title_only_poster(poster_url, base_name)
             if image_bytes:
+                media = InputMediaPhoto(media=image_bytes, caption=text, parse_mode=enums.ParseMode.HTML)
                 try:
-                    sent_msg = await bot.send_photo(
+                    sent_msg = await bot.edit_message_media(
                         chat_id=MOVIE_UPDATE_CHANNEL,
-                        photo=image_bytes,  # bytes
-                        caption=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
+                        message_id=movie_doc["message_id"],
+                        media=media,
+                        reply_markup=buttons
                     )
+                except MessageNotModified:
+                    sent_msg = movie_doc
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
                     return await send_movie_update(bot, base_name, is_update)
-                except Exception as img_err:
-                    logger.error(f"Failed to send generated poster: {img_err}")
-                    # fallback: send original poster URL
+                except MessageIdInvalid:
+                    logger.warning(f"Message ID invalid for {base_name}, will send new.")
+                    is_update = False  # fallback to new send
+                except Exception as e:
+                    logger.error(f"Edit media error: {e}")
+                    # Try to at least update caption
                     try:
-                        sent_msg = await bot.send_photo(
+                        sent_msg = await bot.edit_message_caption(
                             chat_id=MOVIE_UPDATE_CHANNEL,
-                            photo=poster_url,
+                            message_id=movie_doc["message_id"],
                             caption=text,
                             reply_markup=buttons,
                             parse_mode=enums.ParseMode.HTML
                         )
-                    except Exception as e:
-                        logger.error(f"Fallback send_photo also failed: {e}")
-                        return None
+                    except Exception:
+                        pass
             else:
-                # ਜੇਕਰ generate fail ਹੋਵੇ, ਤਾਂ ਅਸਲੀ URL ਭੇਜੋ
-                try:
-                    sent_msg = await bot.send_photo(
-                        chat_id=MOVIE_UPDATE_CHANNEL,
-                        photo=poster_url,
-                        caption=text,
-                        reply_markup=buttons,
-                        parse_mode=enums.ParseMode.HTML
-                    )
-                except FloodWait as e:
-                    await asyncio.sleep(e.value)
-                    return await send_movie_update(bot, base_name, is_update)
-                except Exception as e:
-                    logger.error(f"Fallback send_photo failed: {e}")
-                    return None
-        else:
-            # UPDATE: ਸਿਰਫ਼ caption edit ਕਰੋ (ਪੋਸਟਰ ਨੂੰ ਨਾ ਛੇੜੋ)
-            if movie_doc.get("message_id"):
+                # Fallback: only caption
                 try:
                     sent_msg = await bot.edit_message_caption(
                         chat_id=MOVIE_UPDATE_CHANNEL,
@@ -573,44 +541,54 @@ async def send_movie_update(bot, base_name, is_update=False):
                     )
                 except MessageNotModified:
                     sent_msg = movie_doc
-                except MessageIdInvalid:
-                    pass
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
                     return await send_movie_update(bot, base_name, is_update)
-            # ਜੇ message_id ਨਾ ਹੋਵੇ (ਕੁਝ ਗੜਬੜ), ਤਾਂ new send ਕਰੋ
-            if not sent_msg:
-                # fallback to send as new (with title poster)
-                image_bytes = await create_title_only_poster(poster_url, base_name)
-                if image_bytes:
-                    try:
-                        sent_msg = await bot.send_photo(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            photo=image_bytes,
-                            caption=text,
-                            reply_markup=buttons,
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                    except Exception as e:
-                        logger.error(f"Update fallback send failed: {e}")
-                        return None
-                else:
-                    try:
-                        sent_msg = await bot.send_photo(
-                            chat_id=MOVIE_UPDATE_CHANNEL,
-                            photo=poster_url,
-                            caption=text,
-                            reply_markup=buttons,
-                            parse_mode=enums.ParseMode.HTML
-                        )
-                    except Exception as e:
-                        logger.error(f"Update fallback send_photo failed: {e}")
-                        return None
+                except Exception as e:
+                    logger.error(f"Caption edit failed: {e}")
+                    return None
+            
+            if sent_msg:
+                return sent_msg
+            else:
+                # If editing failed completely, DO NOT send new post (avoid duplicates)
+                logger.warning(f"Update failed for {base_name}, not creating duplicate.")
+                return None
+
+        # --- NEW POST CASE ---
+        image_bytes = await create_title_only_poster(poster_url, base_name)
+        if image_bytes:
+            try:
+                sent_msg = await bot.send_photo(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    photo=image_bytes,
+                    caption=text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
+            except FloodWait as e:
+                await asyncio.sleep(e.value)
+                return await send_movie_update(bot, base_name, is_update)
+            except Exception as e:
+                logger.error(f"New send failed: {e}")
+                sent_msg = await bot.send_photo(
+                    chat_id=MOVIE_UPDATE_CHANNEL,
+                    photo=poster_url,
+                    caption=text,
+                    reply_markup=buttons,
+                    parse_mode=enums.ParseMode.HTML
+                )
+        else:
+            sent_msg = await bot.send_photo(
+                chat_id=MOVIE_UPDATE_CHANNEL,
+                photo=poster_url,
+                caption=text,
+                reply_markup=buttons,
+                parse_mode=enums.ParseMode.HTML
+            )
 
         if sent_msg and hasattr(sent_msg, 'id'):
-            # Save message_id for future updates (if new send)
-            if not is_update and movie_doc.get("message_id") is None:
-                await db.movie_updates.update_one({"_id": base_name}, {"$set": {"message_id": sent_msg.id}})
+            await db.movie_updates.update_one({"_id": base_name}, {"$set": {"message_id": sent_msg.id}})
             asyncio.create_task(verify_and_correct_post_with_ai(bot, sent_msg.id, base_name, buttons))
             return sent_msg
 
@@ -622,8 +600,7 @@ async def send_movie_update(bot, base_name, is_update=False):
 
 async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, buttons):
     try:
-        # ✅ 1 ਮਿੰਟ (60 ਸਕਿੰਟ) ਬਾਅਦ ਚੈੱਕ ਕਰੋ
-        await asyncio.sleep(60)
+        await asyncio.sleep(60)  # 1 ਮਿੰਟ ਬਾਅਦ
         
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
         if not movie_doc or not movie_doc.get("poster_url"):
@@ -670,7 +647,6 @@ def generate_movie_message(movie_doc, base_name) -> str:
         if file.get("language") and file["language"] != "N/A":
             all_languages.update(l.strip() for l in file["language"].split(",") if l.strip())
     
-    # ✅ ਜੇਕਰ movie_doc ਵਿੱਚ language ਸਟੋਰ ਹੈ, ਤਾਂ ਉਸ ਨੂੰ ਵੀ ਲਵਾਂ
     if movie_doc.get("language") and movie_doc["language"] != "N/A":
         all_languages.update(l.strip() for l in movie_doc["language"].split(",") if l.strip())
     
@@ -683,11 +659,10 @@ def generate_movie_message(movie_doc, base_name) -> str:
     year_val = str(movie_doc.get("year", "")).strip()
     year_val = re.sub(r'[()\[\]]', '', year_val)
     
-    # [FIX] ਚੈੱਕ ਕਰੋ ਕਿ ਪੋਸਟ ਸੀਰੀਜ਼ (#SERIES) ਦੀ ਹੈ ਜਾਂ ਨਹੀਂ। ਜੇ ਸੀਰੀਜ਼ ਹੈ ਤਾਂ ਸਾਲ (Year) ਨਾ ਲਗਾਓ।
     is_series = (movie_doc.get("tag") == "#SERIES")
     
     if is_series:
-        year_str = ""  # ਵੈੱਬ ਸੀਰੀਜ਼/ਐਪੀਸੋਡਸ ਲਈ ਸਾਲ ਬਿਲਕੁਲ ਗਾਇਬ
+        year_str = ""
     else:
         year_str = f" ({html.escape(year_val)})" if year_val and year_val != "None" and year_val not in title else ""
     
