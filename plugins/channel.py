@@ -401,7 +401,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 tmdb_data = await get_movie_detailsx(base_name)
                 if tmdb_data and not tmdb_data.get("error"):
                     details = tmdb_data.copy()
-                    poster_path = tmdb_data.get("poster_path')  # note: we need to ensure the key is correct (TMDB returns 'poster_path')
+                    # FIXED: corrected syntax error (double-quote with single-quote)
+                    poster_path = tmdb_data.get("poster_path")  # TMDB returns 'poster_path'
                     backdrop_url = tmdb_data.get("backdrop_url")  # already converted to URL
                     orig_lang = tmdb_data.get("original_language")
                     if orig_lang:
@@ -795,4 +796,4 @@ def generate_movie_message(movie_doc, base_name) -> str:
         f"⭐ IMDb: {rating_str}\n\n"
         f"➡ Audio Track:- 🔊 {language_str}\n\n"
         f"Added ✅"
-                )
+    )
