@@ -89,7 +89,7 @@ async def check_db_size(db):
 
 
 # ====================================================
-# ✅ FIXED save_file() FUNCTION (Error ਠੀਕ ਕੀਤੀ ਗਈ)
+# ✅ FIXED save_file() — Safe file_type handling
 # ====================================================
 async def save_file(media):
     """Save file in database, with detailed logging."""
@@ -116,10 +116,10 @@ async def save_file(media):
                 "Error during MULTIPLE_DB check; defaulting to primary DB.", exc_info=e
             )
     
-    # ====== FIX: Safe way to get file_type (Error ਰੋਕਣ ਲਈ) ======
+    # ====== FIX: Safe way to get file_type ======
     file_type = getattr(media, 'file_type', None)
     if file_type is None:
-        # If attribute is missing, derive from object type
+        # Derive from object type
         if hasattr(media, 'video') or str(type(media)).find('Video') != -1:
             file_type = "video"
         elif hasattr(media, 'document') or str(type(media)).find('Document') != -1:
@@ -128,7 +128,7 @@ async def save_file(media):
             file_type = "audio"
         else:
             file_type = "unknown"
-    # ===========================================================
+    # ============================================
 
     try:
         cover_to_use = getattr(getattr(media, "cover", None), "file_id", None)
@@ -137,7 +137,7 @@ async def save_file(media):
             file_ref=file_ref,
             file_name=file_name,
             file_size=media.file_size,
-            file_type=file_type,  # <--- FIXED: Safe variable used here
+            file_type=file_type,          # <--- FIXED
             mime_type=media.mime_type,
             caption=(media.caption.html if hasattr(media, "caption") and media.caption and INDEX_CAPTION else None),
             cover=cover_to_use if COVERX else None,
