@@ -88,6 +88,9 @@ async def check_db_size(db):
         return 0
 
 
+# ====================================================
+# ✅ FIXED save_file() FUNCTION (Error ਠੀਕ ਕੀਤੀ ਗਈ)
+# ====================================================
 async def save_file(media):
     """Save file in database, with detailed logging."""
     file_id, file_ref = unpack_new_file_id(media.file_id)
@@ -112,6 +115,21 @@ async def save_file(media):
             logger.error(
                 "Error during MULTIPLE_DB check; defaulting to primary DB.", exc_info=e
             )
+    
+    # ====== FIX: Safe way to get file_type (Error ਰੋਕਣ ਲਈ) ======
+    file_type = getattr(media, 'file_type', None)
+    if file_type is None:
+        # If attribute is missing, derive from object type
+        if hasattr(media, 'video') or str(type(media)).find('Video') != -1:
+            file_type = "video"
+        elif hasattr(media, 'document') or str(type(media)).find('Document') != -1:
+            file_type = "document"
+        elif hasattr(media, 'audio') or str(type(media)).find('Audio') != -1:
+            file_type = "audio"
+        else:
+            file_type = "unknown"
+    # ===========================================================
+
     try:
         cover_to_use = getattr(getattr(media, "cover", None), "file_id", None)
         record = saveMedia(
@@ -119,7 +137,7 @@ async def save_file(media):
             file_ref=file_ref,
             file_name=file_name,
             file_size=media.file_size,
-            file_type=media.file_type,
+            file_type=file_type,  # <--- FIXED: Safe variable used here
             mime_type=media.mime_type,
             caption=(media.caption.html if hasattr(media, "caption") and media.caption and INDEX_CAPTION else None),
             cover=cover_to_use if COVERX else None,
@@ -141,6 +159,7 @@ async def save_file(media):
         return False, 3
     #logger.info(f"[SUCCESS] '{file_name}' saved to {target_db} DB.")
     return True, 1
+
 
 async def get_search_results(chat_id, query, file_type=None, max_results=None, offset=0, filter=False):
     if chat_id is not None:
@@ -245,6 +264,7 @@ async def get_search_results(chat_id, query, file_type=None, max_results=None, o
             next_offset = ""
 
     return files, next_offset, total_results
+
 
 async def get_bad_files(query, file_type=None):
     query = query.strip()
