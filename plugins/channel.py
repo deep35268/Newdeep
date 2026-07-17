@@ -27,14 +27,16 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
-# ---- Helper to ensure string ----
+# ---- STRONG ENSURE STRING (handles bytes, None, etc.) ----
 def ensure_str(value):
+    if value is None:
+        return None
     if isinstance(value, bytes):
         try:
             return value.decode('utf-8')
-        except:
+        except UnicodeDecodeError:
             return str(value)
-    return value
+    return str(value)   # force string
 
 SESSION: Optional[aiohttp.ClientSession] = None
 
@@ -115,6 +117,7 @@ MEDIA_FILTER = filters.document | filters.video | filters.audio
 
 async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
     try:
+        # Force string for backdrop_url
         backdrop_url = ensure_str(movie_data.get("backdrop_url"))
         if not backdrop_url:
             return None
@@ -219,7 +222,7 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
         logger.error(f"Poster generation error: {e}")
         return None
 
-# ============ LANDSCAPE FETCH ============
+# ============ LANDSCAPE FETCH (FIXED FOR BYTES) ============
 
 async def fetch_cinemeta_ai_poster(query: str, is_series: bool = False) -> Optional[str]:
     try:
@@ -243,7 +246,11 @@ async def get_landscape_poster_only(movie_name: str, is_series: bool = False) ->
         try:
             details = await get_movie_detailsx(movie_name)
             if details and details.get('backdrop_url'):
+                # Force string conversion BEFORE any regex
                 backdrop = ensure_str(details['backdrop_url'])
+                if not backdrop:
+                    return None
+                # Now safe to use regex
                 if "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
@@ -446,7 +453,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             logger.info(f"❌ No poster for {base_name}")
             return
 
-        # Ensure final_poster is string
+        # Force string
         final_poster = ensure_str(final_poster)
 
         movie_data = {
@@ -454,7 +461,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             "tagline": details.get("tagline", ""),
             "release_date": details.get("release_date", ""),
             "cast_names": details.get("cast", []),
-            "backdrop_url": final_poster  # now guaranteed string
+            "backdrop_url": final_poster
         }
 
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
@@ -599,7 +606,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 return await send_movie_update(bot, base_name, is_update, movie_data)
             except Exception as e:
                 logger.error(f"Send error: {e}")
-                # fallback to poster_url (string)
+                # fallback to poster_url (already string)
                 sent_msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=poster_url,
