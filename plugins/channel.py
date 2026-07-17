@@ -27,6 +27,15 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
+# ---- Helper to ensure string ----
+def ensure_str(value):
+    if isinstance(value, bytes):
+        try:
+            return value.decode('utf-8')
+        except:
+            return str(value)
+    return value
+
 SESSION: Optional[aiohttp.ClientSession] = None
 
 async def get_session() -> aiohttp.ClientSession:
@@ -106,14 +115,10 @@ MEDIA_FILTER = filters.document | filters.video | filters.audio
 
 async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
     try:
-        backdrop_url = movie_data.get("backdrop_url")
+        backdrop_url = ensure_str(movie_data.get("backdrop_url"))
         if not backdrop_url:
             return None
-        
-        # Fix: bytes to string
-        if isinstance(backdrop_url, bytes):
-            backdrop_url = backdrop_url.decode('utf-8')
-            
+
         async with aiohttp.ClientSession() as session:
             async with session.get(backdrop_url) as resp:
                 if resp.status != 200:
@@ -177,7 +182,7 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
                 pass
 
         # ---- Title ----
-        title = movie_data.get("title", "MOVIE").upper()
+        title = ensure_str(movie_data.get("title", "MOVIE")).upper()
         wrapped_title = textwrap.fill(title, width=14)
         try:
             bbox = draw.textbbox((0, 0), wrapped_title, font=title_font)
@@ -189,7 +194,7 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
             draw.text((img_w//4, img_h//2 - 20), wrapped_title, font=title_font, fill=(255, 255, 255, 255))
 
         # ---- Tagline ----
-        tagline = movie_data.get("tagline", "").upper()
+        tagline = ensure_str(movie_data.get("tagline", "")).upper()
         if tagline:
             try:
                 bbox = draw.textbbox((0, 0), tagline, font=sub_font)
@@ -198,7 +203,7 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
                 pass
 
         # ---- Release ----
-        release = movie_data.get("release_date", "").split("-")[0] if movie_data.get("release_date") else "2026"
+        release = ensure_str(movie_data.get("release_date", "").split("-")[0] if movie_data.get("release_date") else "2026")
         bottom_text = f"ONLY IN THEATRES  {release}"
         try:
             bbox = draw.textbbox((0, 0), bottom_text, font=small_font)
@@ -226,7 +231,7 @@ async def fetch_cinemeta_ai_poster(query: str, is_series: bool = False) -> Optio
                 data = await resp.json()
                 metas = data.get("metas", [])
                 if metas:
-                    background = metas[0].get("background")
+                    background = ensure_str(metas[0].get("background"))
                     if background and any(x in background for x in ["images.metahub.space", "tmdb"]):
                         return background
     except Exception as e:
@@ -238,19 +243,17 @@ async def get_landscape_poster_only(movie_name: str, is_series: bool = False) ->
         try:
             details = await get_movie_detailsx(movie_name)
             if details and details.get('backdrop_url'):
-                backdrop = details['backdrop_url']
-                if isinstance(backdrop, bytes):
-                    backdrop = backdrop.decode('utf-8')
+                backdrop = ensure_str(details['backdrop_url'])
                 if "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
-                return backdrop
+                return ensure_str(backdrop)
         except Exception as e:
             logger.error(f"TMDB backdrop error: {e}")
     
     ai_backdrop = await fetch_cinemeta_ai_poster(movie_name, is_series)
     if ai_backdrop:
-        return ai_backdrop
+        return ensure_str(ai_backdrop)
     return None
 
 # ============ EXTRACTION FUNCTIONS ============
@@ -314,7 +317,7 @@ def extract_media_info(filename: str, caption: str):
     if not base_name:
         base_name = filename_normalized
 
-    # FIX: Remove year from base_name to group same movies
+    # Remove year to group same movies
     base_name = re.sub(r'\b(19\d{2}|20\d{2})\b', '', base_name).strip()
     base_name = normalize(base_name)
 
@@ -443,12 +446,15 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             logger.info(f"❌ No poster for {base_name}")
             return
 
+        # Ensure final_poster is string
+        final_poster = ensure_str(final_poster)
+
         movie_data = {
             "title": details.get("title") or base_name,
             "tagline": details.get("tagline", ""),
             "release_date": details.get("release_date", ""),
             "cast_names": details.get("cast", []),
-            "backdrop_url": final_poster
+            "backdrop_url": final_poster  # now guaranteed string
         }
 
         existing_movie = await db.movie_updates.find_one({"_id": base_name})
@@ -460,7 +466,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             if not existing_movie.get("year") and year_val:
                 update_fields["year"] = year_val
             if not existing_movie.get("poster_url") and final_poster:
-                update_fields["poster_url"] = final_poster
+                update_fields["poster_url"] = final_poster  # string
             if existing_movie.get("language") != final_language and final_language != "N/A":
                 update_fields["language"] = final_language
             update_fields["movie_data"] = movie_data
@@ -512,13 +518,13 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
         if not movie_data:
             movie_data = movie_doc.get("movie_data", {})
             if not movie_data.get("backdrop_url"):
-                movie_data["backdrop_url"] = movie_doc.get("poster_url")
+                movie_data["backdrop_url"] = ensure_str(movie_doc.get("poster_url"))
             if not movie_data.get("title"):
                 movie_data["title"] = base_name
 
         text = generate_movie_message(movie_doc, base_name)
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton('🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
-        poster_url = movie_doc.get("poster_url")
+        poster_url = ensure_str(movie_doc.get("poster_url"))
 
         if not poster_url:
             return None
@@ -593,6 +599,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 return await send_movie_update(bot, base_name, is_update, movie_data)
             except Exception as e:
                 logger.error(f"Send error: {e}")
+                # fallback to poster_url (string)
                 sent_msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=poster_url,
