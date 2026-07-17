@@ -109,7 +109,7 @@ EPISODE_CLEAN_PATTERN = re.compile(r'\b(S\d{1,2}|E\d{1,3}|Ep\d{1,3}|Episode\s*\d
 
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 
-# ============ BOOKMYSHOW-STYLE PROFESSIONAL POSTER ============
+# ============ BOOKMYSHOW-STYLE PROFESSIONAL POSTER (FIXED FONTS) ============
 
 async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
     """
@@ -138,12 +138,14 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
         img_w, img_h = image.size
         draw = ImageDraw.Draw(image)
         
-        # ---- Load Fonts ----
+        # ---- Load Fonts (FIXED: No overwrite after try) ----
         try:
+            # Try DejaVu fonts (available on Heroku/Ubuntu)
             title_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", int(img_w * 0.08))
             sub_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(img_w * 0.035))
             small_font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", int(img_w * 0.025))
         except:
+            # Fallback to default fonts if DejaVu not found
             title_font = ImageFont.load_default()
             sub_font = ImageFont.load_default()
             small_font = ImageFont.load_default()
@@ -160,7 +162,7 @@ async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
         if cast_text and cast_text != "STARRING":
             bbox = draw.textbbox((0, 0), cast_text, font=sub_font)
             t_w = bbox[2] - bbox[0]
-            draw.text(((img_w - t_w) / 2, int(img_h * 0.08)), cast_text, font=sub_font, fill=(255, 215, 0, 255))
+            draw.text(((img_w - t_w) / 2, int(img_h * 0.08)), cast_text, font=sub_font, fill=(255, 215, 0, 255))  # Gold
 
         # ---- 2. Title (Center) ----
         title = movie_data.get("title", "MOVIE").upper()
