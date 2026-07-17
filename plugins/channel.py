@@ -27,7 +27,7 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
-# ---- STRONG ENSURE STRING (handles bytes, None, etc.) ----
+# ---- STRONG ENSURE STRING ----
 def ensure_str(value):
     if value is None:
         return None
@@ -37,6 +37,11 @@ def ensure_str(value):
         except UnicodeDecodeError:
             return str(value)
     return str(value)   # force string
+
+def is_valid_url(url):
+    if not url or not isinstance(url, str):
+        return False
+    return url.startswith(('http://', 'https://'))
 
 SESSION: Optional[aiohttp.ClientSession] = None
 
@@ -117,14 +122,15 @@ MEDIA_FILTER = filters.document | filters.video | filters.audio
 
 async def create_professional_poster(movie_data: dict) -> Optional[bytes]:
     try:
-        # Force string for backdrop_url
         backdrop_url = ensure_str(movie_data.get("backdrop_url"))
-        if not backdrop_url:
+        if not backdrop_url or not is_valid_url(backdrop_url):
+            logger.warning(f"Invalid backdrop_url: {backdrop_url}")
             return None
 
         async with aiohttp.ClientSession() as session:
-            async with session.get(backdrop_url) as resp:
+            async with session.get(backdrop_url, timeout=15) as resp:
                 if resp.status != 200:
+                    logger.warning(f"Backdrop download failed: {resp.status}")
                     return None
                 img_data = await resp.read()
         
@@ -246,12 +252,8 @@ async def get_landscape_poster_only(movie_name: str, is_series: bool = False) ->
         try:
             details = await get_movie_detailsx(movie_name)
             if details and details.get('backdrop_url'):
-                # Force string conversion BEFORE any regex
                 backdrop = ensure_str(details['backdrop_url'])
-                if not backdrop:
-                    return None
-                # Now safe to use regex
-                if "t/p/" in backdrop:
+                if backdrop and "t/p/" in backdrop:
                     backdrop = re.sub(r'/t/p/w\d+/', '/t/p/original/', backdrop)
                     backdrop = re.sub(r'/t/p/w\d+x\d+/', '/t/p/original/', backdrop)
                 return ensure_str(backdrop)
@@ -453,8 +455,10 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             logger.info(f"❌ No poster for {base_name}")
             return
 
-        # Force string
         final_poster = ensure_str(final_poster)
+        if not is_valid_url(final_poster):
+            logger.warning(f"Invalid poster URL for {base_name}: {final_poster}")
+            return
 
         movie_data = {
             "title": details.get("title") or base_name,
@@ -472,8 +476,8 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 update_fields["rating"] = rating_val
             if not existing_movie.get("year") and year_val:
                 update_fields["year"] = year_val
-            if not existing_movie.get("poster_url") and final_poster:
-                update_fields["poster_url"] = final_poster  # string
+            if not existing_movie.get("poster_url") or not is_valid_url(existing_movie.get("poster_url")):
+                update_fields["poster_url"] = final_poster
             if existing_movie.get("language") != final_language and final_language != "N/A":
                 update_fields["language"] = final_language
             update_fields["movie_data"] = movie_data
@@ -524,20 +528,28 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
 
         if not movie_data:
             movie_data = movie_doc.get("movie_data", {})
-            if not movie_data.get("backdrop_url"):
-                movie_data["backdrop_url"] = ensure_str(movie_doc.get("poster_url"))
+            if not movie_data.get("backdrop_url") or not is_valid_url(movie_data.get("backdrop_url")):
+                poster_url = ensure_str(movie_doc.get("poster_url"))
+                if is_valid_url(poster_url):
+                    movie_data["backdrop_url"] = poster_url
+                else:
+                    logger.warning(f"No valid backdrop_url for {base_name}")
+                    return None
             if not movie_data.get("title"):
                 movie_data["title"] = base_name
 
         text = generate_movie_message(movie_doc, base_name)
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton('🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
+        
+        # Ensure poster_url is a valid string
         poster_url = ensure_str(movie_doc.get("poster_url"))
-
-        if not poster_url:
+        if not is_valid_url(poster_url):
+            logger.warning(f"poster_url invalid for {base_name}: {poster_url}")
             return None
 
         sent_msg = None
 
+        # ---- UPDATE CASE ----
         if is_update and movie_doc.get("message_id"):
             image_bytes = await create_professional_poster(movie_data)
             if image_bytes:
@@ -557,7 +569,8 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 except MessageIdInvalid:
                     is_update = False
                 except Exception as e:
-                    logger.error(f"Edit error: {e}")
+                    logger.error(f"Edit media error: {e}")
+                    # Try to at least update caption
                     try:
                         sent_msg = await bot.edit_message_caption(
                             chat_id=MOVIE_UPDATE_CHANNEL,
@@ -566,9 +579,10 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                             reply_markup=buttons,
                             parse_mode=enums.ParseMode.HTML
                         )
-                    except:
+                    except Exception:
                         pass
             else:
+                # Fallback: caption only
                 try:
                     sent_msg = await bot.edit_message_caption(
                         chat_id=MOVIE_UPDATE_CHANNEL,
@@ -582,15 +596,17 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 except FloodWait as e:
                     await asyncio.sleep(e.value)
                     return await send_movie_update(bot, base_name, is_update, movie_data)
-                except Exception:
+                except Exception as e:
+                    logger.error(f"Caption edit fallback error: {e}")
                     return None
             
             if sent_msg:
                 return sent_msg
             else:
+                logger.warning(f"Update failed for {base_name}, not creating duplicate.")
                 return None
 
-        # New post
+        # ---- NEW POST CASE ----
         image_bytes = await create_professional_poster(movie_data)
         if image_bytes:
             try:
@@ -605,8 +621,22 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 await asyncio.sleep(e.value)
                 return await send_movie_update(bot, base_name, is_update, movie_data)
             except Exception as e:
-                logger.error(f"Send error: {e}")
-                # fallback to poster_url (already string)
+                logger.error(f"Send with image_bytes failed: {e}")
+                # Fallback to poster_url
+                try:
+                    sent_msg = await bot.send_photo(
+                        chat_id=MOVIE_UPDATE_CHANNEL,
+                        photo=poster_url,
+                        caption=text,
+                        reply_markup=buttons,
+                        parse_mode=enums.ParseMode.HTML
+                    )
+                except Exception as e2:
+                    logger.error(f"Fallback send_photo with URL also failed: {e2}")
+                    return None
+        else:
+            # No image bytes, use poster_url
+            try:
                 sent_msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
                     photo=poster_url,
@@ -614,14 +644,9 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                     reply_markup=buttons,
                     parse_mode=enums.ParseMode.HTML
                 )
-        else:
-            sent_msg = await bot.send_photo(
-                chat_id=MOVIE_UPDATE_CHANNEL,
-                photo=poster_url,
-                caption=text,
-                reply_markup=buttons,
-                parse_mode=enums.ParseMode.HTML
-            )
+            except Exception as e:
+                logger.error(f"Send_photo with poster_url failed: {e}")
+                return None
 
         if sent_msg and hasattr(sent_msg, 'id'):
             await db.movie_updates.update_one({"_id": base_name}, {"$set": {"message_id": sent_msg.id}})
