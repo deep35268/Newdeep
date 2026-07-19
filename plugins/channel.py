@@ -62,7 +62,7 @@ POSTED_MOVIES = set()
 MAX_CACHE_SIZE = 500
 locks = defaultdict(asyncio.Lock)
 
-# ============ CONSTANTS ============
+# ============ CONSTANTS (unchanged) ============
 IGNORE_WORDS = {
     "rarbg", "dub", "sub", "sample", "mkv", "aac", "combined", "mp4", "avi",
     "action", "adventure", "animation", "biography", "comedy", "crime", 
@@ -125,53 +125,35 @@ YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(19\d{2}|20\d{2})(?![A-Za-z0-9])")
 EPISODE_CLEAN_PATTERN = re.compile(r'\b(S\d{1,2}|E\d{1,3}|Ep\d{1,3}|Episode\s*\d{1,3}|Season\s*\d{1,2}|Part\s*\d{1,2}|\d{1,2}\s*-\s*\d{1,2}|\d{1,3}\s*to\s*\d{1,3})\b', re.IGNORECASE)
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 
-# ============ NEW FUNCTION: GOOGLE IMAGE BACKDROP SEARCH (FALLBACK) ============
-async def search_google_for_backdrop(title: str, year: Optional[str] = None) -> Optional[str]:
+
+# ============ GOOGLE/DUCKDUCKGO FALLBACK ENGINE ============
+async def get_google_image_fallback(query: str) -> Optional[str]:
     """
-    TMDb ਤੋਂ ਪੋਸਟਰ ਨਾ ਮਿਲਣ 'ਤੇ ਇਹ ਫੰਕਸ਼ਨ ਗੂਗਲ ਅਤੇ ਡੱਕਡੱਕਗੋ ਤੋਂ HD ਲੈਂਡਸਕੇਪ ਵਾਲਪੇਪਰ ਲੱਭਦਾ ਹੈ।
+    ਜੇਕਰ TMDb ਤੋਂ ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਨਾ ਮਿਲੇ, ਤਾਂ ਇਹ ਫੰਕਸ਼ਨ ਆਟੋਮੈਟਿਕਲੀ 
+    ਗੂਗਲ/ਡਕਡਕਗੋ ਤੋਂ HD ਲੈਂਡਸਕੇਪ ਬੈਕਗ੍ਰਾਊਂਡ ਚਿੱਤਰ ਦਾ ਲਿੰਕ ਲੱਭੇਗਾ।
     """
-    query = f"{title} movie landscape backdrop wallpaper textless hd"
-    if year:
-        query += f" {year}"
-    
-    query_encoded = urllib.parse.quote_plus(query)
-    # Search URL (Using Google Images Async format)
-    url = f"https://www.google.com/search?q={query_encoded}&tbm=isch&asearch=ichunk&async=_id:rg_s,_pms:s,_fmt:pc"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
     try:
         session = await get_session()
-        async with session.get(url, headers=headers, timeout=12) as response:
-            if response.status == 200:
-                html_content = await response.text()
-                
-                # Find direct image URLs inside google search response
-                urls = re.findall(r'"ou"\s*:\s*"([^"]+)"', html_content)
-                if not urls:
-                    urls = re.findall(r'imgurl=([^&]+)', html_content)
-                    urls = [urllib.parse.unquote(u) for u in urls]
-                
-                # DuckDuckGo fallback if Google images is heavily rate-limited
-                if not urls:
-                    ddg_url = f"https://duckduckgo.com/html/?q={query_encoded}"
-                    async with session.get(ddg_url, headers=headers, timeout=8) as ddg_resp:
-                        if ddg_resp.status == 200:
-                            ddg_html = await ddg_resp.text()
-                            urls = re.findall(r'href="([^"]+)"', ddg_html)
-                            urls = [u for u in urls if any(ext in u.lower() for ext in ['.jpg', '.jpeg', '.png'])]
-                
-                # Filter out small graphics, icons, or avatars, and return the first valid HD wallpaper
-                for img_url in urls:
-                    img_url = ensure_str(img_url)
-                    if is_valid_url(img_url) and not any(bad in img_url.lower() for bad in ["icon", "logo", "avatar", "thumbnail", "mini"]):
-                        logger.info(f"Successfully found HD Google backdrop for {title}: {img_url}")
-                        return img_url
-                        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        }
+        # Searching for direct HD image wallpaper link
+        search_query = f"{query} landscape movie backdrop poster 1920x1080"
+        search_url = f"https://html.duckduckgo.com/html/?q={urllib.parse.quote(search_query)}"
+        
+        async with session.get(search_url, headers=headers, timeout=12) as resp:
+            if resp.status == 200:
+                html_content = await resp.text()
+                # Finding absolute image URLs ending with jpg/jpeg/png
+                image_urls = re.findall(r'href="(https?://[^"]+\.(?:jpg|jpeg|png))"', html_content, re.IGNORECASE)
+                for url in image_urls:
+                    if "duckduckgo" not in url and "yandex" not in url and "wiki" not in url:
+                        logger.info(f"🎯 Google/DDG Fallback Poster found for: {query} -> {url}")
+                        return url
     except Exception as e:
-        logger.error(f"Google Image Search failed for '{title}': {e}")
+        logger.warning(f"Google Fallback Search failed: {e}")
     return None
+
 
 # ============ GENERATE LANDSCAPE POSTER (ALWAYS RETURNS BYTES) ============
 async def generate_landscape_poster(
@@ -183,12 +165,12 @@ async def generate_landscape_poster(
     year: Optional[str] = None
 ) -> bytes:
     """
-    ਇਹ ਫੰਕਸ਼ਨ 16:9 ਲੈਂਡਸਕੇਪ ਪੋਸਟਰ ਤਿਆਰ ਕਰਦਾ ਹੈ ਅਤੇ ਟਾਈਟਲ ਨੂੰ ਖੂਬਸੂਰਤ ਤਰੀਕੇ ਨਾਲ ਓਵਰਲੇਅ ਕਰਦਾ ਹੈ।
+    ਹਮੇਸ਼ਾ ਇੱਕ landscape (16:9) image ਬਣਾਓ, title ਓਵਰਲੇਅ ਕਰਕੇ।
     """
     W, H = 1920, 1080
     bg = None
 
-    # 1. Try backdrop (TMDb or Google backdrop image)
+    # 1. Try backdrop URL
     if backdrop_url and is_valid_url(backdrop_url):
         try:
             session = await get_session()
@@ -252,7 +234,7 @@ async def generate_landscape_poster(
     if title_font is None:
         title_font = sub_font = small_font = ImageFont.load_default()
 
-    # ---------- Gradient overlay (darken top & bottom for high contrast) ----------
+    # ---------- Gradient overlay (darken top & bottom) ----------
     for i in range(0, int(H * 0.35)):
         alpha = int(200 * (1 - i / (H * 0.35)))
         draw.rectangle([(0, i), (W, i+1)], fill=(0, 0, 0, alpha))
@@ -290,7 +272,7 @@ async def generate_landscape_poster(
     bg.convert("RGB").save(out, format="JPEG", quality=92)
     return out.getvalue()
 
-# ============ EXTRACTION FUNCTIONS ============
+# ============ EXTRACTION FUNCTIONS (ALL STRING SAFE) ============
 def clean_mentions_links(text: str) -> str:
     text = ensure_str(text)
     return safe_re_sub(CLEAN_PATTERN, "", text).strip()
@@ -354,7 +336,6 @@ def extract_media_info(filename: str, caption: str):
     if not base_name:
         base_name = filename_normalized
 
-    # Remove year to group same movies
     base_name = safe_re_sub(r'\b(19\d{2}|20\d{2})\b', '', base_name).strip()
     base_name = normalize(base_name)
 
@@ -434,7 +415,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         backdrop_url = None
         poster_path = None
 
-        # 1. TMDb Poster/Backdrop Lookup
         if TMDB_POSTER:
             try:
                 tmdb_data = await get_movie_detailsx(base_name)
@@ -451,12 +431,15 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         if not details:
             details = await get_movie_details(base_name) or {}
 
-        # 2. CRITICAL GOOGLE SEARCH FALLBACK FOR BACKDROP
-        if not backdrop_url or not is_valid_url(backdrop_url):
-            logger.info(f"TMDb backdrop failed or empty for '{base_name}'. Searching Google Images for HD landscape poster...")
-            google_backdrop = await search_google_for_backdrop(base_name, media_info["year"])
-            if google_backdrop:
-                backdrop_url = google_backdrop
+        # ---------------- GOOGLE IMAGE FALLBACK INTEGRATION ----------------
+        # ਜੇਕਰ TMDb ਤੋਂ ਬੈਕਡ੍ਰੌਪ (Landscape) ਚਿੱਤਰ ਨਹੀਂ ਮਿਲਿਆ, ਤਾਂ ਗੂਗਲ ਸਰਚ ਤੋਂ ਲੱਭੋ
+        year_val = media_info["year"]
+        if not year_val and details.get("year"):
+            year_val = str(details.get("year")).strip()
+
+        if not backdrop_url or backdrop_url == "N/A":
+            search_query = f"{base_name} {year_val or ''}"
+            backdrop_url = await get_google_image_fallback(search_query)
 
         rating_val = "N/A"
         if details.get("rating"):
@@ -465,10 +448,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
             except ValueError:
                 pass
 
-        year_val = media_info["year"]
-        if not year_val and details.get("year"):
-            year_val = str(details.get("year")).strip()
-        
         is_series = (media_info["tag"] == "#SERIES")
         year_val = year_val or None
         
@@ -548,7 +527,7 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
     except Exception as e:
         logger.error(f"Process error: {e}")
 
-# ============ SEND MOVIE UPDATE ============
+# ============ SEND MOVIE UPDATE (ALWAYS WITH GENERATED POSTER) ============
 async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
     try:
         movie_doc = await db.movie_updates.find_one({"_id": base_name})
@@ -561,7 +540,6 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 movie_data = {}
             if not movie_data.get("title"):
                 movie_data["title"] = base_name
-            # ensure all strings
             movie_data = {k: ensure_str(v) if isinstance(v, (str, bytes)) else v for k, v in movie_data.items()}
             if isinstance(movie_data.get("cast_names"), list):
                 movie_data["cast_names"] = [ensure_str(c) for c in movie_data["cast_names"]]
@@ -569,7 +547,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
         text = generate_movie_message(movie_doc, base_name)
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton('🔥 𝐉𝐎𝐈𝐍 𝐑𝐄𝐐𝐔𝐄𝐒𝐓 𝐆𝐑𝐎𝐔𝐏 ⚡', url="https://t.me/+l-EIo3NnnJAxODE9")]])
 
-        # Generate landscape poster bytes (always succeeds using TMDb/Google Image URLs)
+        # Generate landscape poster bytes (always succeeds)
         poster_bytes = await generate_landscape_poster(
             title=movie_data.get("title", base_name),
             backdrop_url=movie_data.get("backdrop_url"),
@@ -580,7 +558,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
         )
 
         if not poster_bytes:
-            # Fallback in case of absolute failure: generate dark solid poster with movie title
+            # Fallback: solid color with title only
             img = Image.new("RGB", (1920, 1080), (20, 20, 30))
             draw = ImageDraw.Draw(img)
             try:
@@ -595,9 +573,14 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
 
         sent_msg = None
 
+        # ---- FIXING PYROGRAM RAW BYTES POINTER ----
+        # Wrap raw bytes in BytesIO with a file name so Pyrogram handles it as a file pointer
+        photo_file = io.BytesIO(poster_bytes)
+        photo_file.name = "poster.jpg"
+
         # ---- UPDATE CASE ----
         if is_update and movie_doc.get("message_id"):
-            media = InputMediaPhoto(media=poster_bytes, caption=text, parse_mode=enums.ParseMode.HTML)
+            media = InputMediaPhoto(media=photo_file, caption=text, parse_mode=enums.ParseMode.HTML)
             try:
                 sent_msg = await bot.edit_message_media(
                     chat_id=MOVIE_UPDATE_CHANNEL,
@@ -630,12 +613,12 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
             else:
                 is_update = False
 
-        # ---- NEW POST CASE ----
+        # ---- NEW POST CASE (or fallback) ----
         if not is_update:
             try:
                 sent_msg = await bot.send_photo(
                     chat_id=MOVIE_UPDATE_CHANNEL,
-                    photo=poster_bytes,
+                    photo=photo_file,
                     caption=text,
                     reply_markup=buttons,
                     parse_mode=enums.ParseMode.HTML
@@ -719,4 +702,4 @@ def generate_movie_message(movie_doc, base_name) -> str:
         f"⭐ IMDb: {rating_str}\n\n"
         f"➡ Audio Track:- 🔊 {language_str}\n\n"
         f"Added ✅"
-    )
+)
