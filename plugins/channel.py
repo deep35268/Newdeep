@@ -9,6 +9,7 @@ from datetime import datetime
 from collections import defaultdict
 import urllib.parse
 from typing import Optional
+
 from PIL import Image, ImageDraw, ImageFont
 
 from pyrogram import Client, filters, enums
@@ -27,6 +28,28 @@ from info import (
 
 logger = logging.getLogger(__name__)
 
+# ============ STRING HELPER (MOST IMPORTANT) ============
+def ensure_str(value):
+    """Convert any value to string safely."""
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        try:
+            return value.decode('utf-8')
+        except UnicodeDecodeError:
+            return str(value)
+    return str(value)
+
+def is_valid_url(url):
+    url = ensure_str(url)
+    return url.startswith(('http://', 'https://'))
+
+def safe_re_sub(pattern, repl, string, flags=0):
+    """Safe re.sub that ensures string input."""
+    string = ensure_str(string)
+    return re.sub(pattern, repl, string, flags)
+
+# ============ SESSION ============
 SESSION: Optional[aiohttp.ClientSession] = None
 
 async def get_session() -> aiohttp.ClientSession:
@@ -102,28 +125,6 @@ YEAR_PATTERN = re.compile(r"(?<![A-Za-z0-9])(19\d{2}|20\d{2})(?![A-Za-z0-9])")
 EPISODE_CLEAN_PATTERN = re.compile(r'\b(S\d{1,2}|E\d{1,3}|Ep\d{1,3}|Episode\s*\d{1,3}|Season\s*\d{1,2}|Part\s*\d{1,2}|\d{1,2}\s*-\s*\d{1,2}|\d{1,3}\s*to\s*\d{1,3})\b', re.IGNORECASE)
 MEDIA_FILTER = filters.document | filters.video | filters.audio
 
-# ============ STRING HELPERS ============
-def ensure_str(value):
-    if value is None:
-        return None
-    if isinstance(value, bytes):
-        try:
-            return value.decode('utf-8')
-        except UnicodeDecodeError:
-            return str(value)
-    return str(value)
-
-def is_valid_url(url):
-    if not url or not isinstance(url, str):
-        return False
-    return url.startswith(('http://', 'https://'))
-
-def safe_re_sub(pattern, repl, string, flags=0):
-    string = ensure_str(string)
-    if string is None:
-        return None
-    return re.sub(pattern, repl, string, flags)
-
 # ============ GENERATE LANDSCAPE POSTER (ALWAYS RETURNS BYTES) ============
 async def generate_landscape_poster(
     title: str,
@@ -140,8 +141,6 @@ async def generate_landscape_poster(
     """
     # Default canvas size (16:9)
     W, H = 1920, 1080
-
-    # Background image
     bg = None
 
     # 1. Try backdrop
@@ -154,7 +153,7 @@ async def generate_landscape_poster(
                         bg = Image.open(io.BytesIO(data)).convert("RGB")
                         bg = bg.resize((W, H), Image.Resampling.LANCZOS)
         except Exception as e:
-            logger.warning(f"Failed to fetch backdrop: {e}")
+            logger.warning(f"Backdrop fetch failed: {e}")
 
     # 2. If backdrop failed, try portrait (poster)
     if bg is None and portrait_url and is_valid_url(portrait_url):
@@ -164,7 +163,6 @@ async def generate_landscape_poster(
                     if resp.status == 200:
                         data = await resp.read()
                         poster = Image.open(io.BytesIO(data)).convert("RGBA")
-                        # Resize poster to fit within 70% of canvas height, keep aspect ratio
                         poster_w, poster_h = poster.size
                         target_h = int(H * 0.75)
                         target_w = int(poster_w * (target_h / poster_h))
@@ -172,26 +170,22 @@ async def generate_landscape_poster(
                             target_w = W
                             target_h = int(poster_h * (target_w / poster_w))
                         poster = poster.resize((target_w, target_h), Image.Resampling.LANCZOS)
-                        # Create canvas with dark gradient
                         canvas = Image.new("RGB", (W, H), (20, 20, 30))
-                        # Paste poster centered
                         x = (W - target_w) // 2
                         y = (H - target_h) // 2 - 30
                         canvas.paste(poster, (x, y), poster)
                         bg = canvas
         except Exception as e:
-            logger.warning(f"Failed to fetch portrait: {e}")
+            logger.warning(f"Portrait fetch failed: {e}")
 
-    # 3. If still no bg, use solid dark gradient (create manually)
+    # 3. If still no bg, use solid dark gradient
     if bg is None:
         bg = Image.new("RGB", (W, H), (15, 15, 25))
-        # Draw a simple gradient
         draw = ImageDraw.Draw(bg)
         for i in range(H):
             grad = int(20 + 50 * (i / H))
             draw.rectangle([(0, i), (W, i+1)], fill=(grad, grad, grad+20))
 
-    # Convert to RGBA for overlays
     bg = bg.convert("RGBA")
     draw = ImageDraw.Draw(bg)
 
@@ -204,7 +198,7 @@ async def generate_landscape_poster(
     title_font = sub_font = small_font = None
     for path in font_paths:
         try:
-            title_font = ImageFont.truetype(path, int(W * 0.08))      # 8% of width
+            title_font = ImageFont.truetype(path, int(W * 0.08))
             sub_font = ImageFont.truetype(path, int(W * 0.035))
             small_font = ImageFont.truetype(path, int(W * 0.025))
             break
@@ -221,46 +215,48 @@ async def generate_landscape_poster(
         draw.rectangle([(0, y_bottom), (W, y_bottom+1)], fill=(0, 0, 0, alpha))
 
     # ---------- Cast (top) ----------
-    cast_text = " | ".join((cast_names or [])[:3]).upper()
+    cast_text = " | ".join(ensure_str(c) for c in (cast_names or [])[:3]).upper()
     if cast_text:
         bbox = draw.textbbox((0, 0), cast_text, font=sub_font)
         tw = bbox[2] - bbox[0]
         draw.text(((W - tw)//2, int(H * 0.08)), cast_text, font=sub_font, fill=(255, 215, 0, 255))
 
     # ---------- Title (center) ----------
-    wrapped_title = textwrap.fill(title.upper(), width=14)
+    wrapped_title = textwrap.fill(ensure_str(title).upper(), width=14)
     bbox = draw.textbbox((0, 0), wrapped_title, font=title_font)
     tw, th = bbox[2]-bbox[0], bbox[3]-bbox[1]
     draw.text(((W - tw)//2, (H - th)//2 - th//2), wrapped_title, font=title_font, fill=(255, 255, 255, 255))
 
     # ---------- Tagline (below title) ----------
     if tagline:
-        tagline = tagline.upper()
+        tagline = ensure_str(tagline).upper()
         bbox = draw.textbbox((0, 0), tagline, font=sub_font)
         tw = bbox[2] - bbox[0]
         draw.text(((W - tw)//2, (H//2) + int(H * 0.06)), tagline, font=sub_font, fill=(255, 255, 200, 255))
 
     # ---------- Year (bottom) ----------
+    year = ensure_str(year)
     bottom_text = f"ONLY IN THEATRES  {year}" if year else "ONLY IN THEATRES"
     bbox = draw.textbbox((0, 0), bottom_text, font=small_font)
     tw = bbox[2] - bbox[0]
     draw.text(((W - tw)//2, H - int(H * 0.1)), bottom_text, font=small_font, fill=(255, 255, 255, 255))
 
-    # ---------- Output ----------
     out = io.BytesIO()
     bg.convert("RGB").save(out, format="JPEG", quality=92)
     return out.getvalue()
 
-# ============ EXTRACTION FUNCTIONS (unchanged) ============
+# ============ EXTRACTION FUNCTIONS (ALL STRING SAFE) ============
 def clean_mentions_links(text: str) -> str:
-    return safe_re_sub(CLEAN_PATTERN, "", text or "").strip()
+    text = ensure_str(text)
+    return safe_re_sub(CLEAN_PATTERN, "", text).strip()
 
 def normalize(s: str) -> str:
+    s = ensure_str(s)
     s = safe_re_sub(NORMALIZE_PATTERN, " ", s)
     return re.sub(r"\s+", " ", s).strip()
 
 def remove_ignored_words(text: str) -> str:
-    words = text.split()
+    words = ensure_str(text).split()
     cleaned = []
     for w in words:
         if w.lower() in IGNORE_WORDS:
@@ -270,16 +266,18 @@ def remove_ignored_words(text: str) -> str:
 
 def extract_languages_from_text(text: str) -> set:
     found = set()
-    text_lower = text.lower()
+    text_lower = ensure_str(text).lower()
     for lang_key, lang_name in CAPTION_LANGUAGES.items():
         if re.search(rf'\b{re.escape(lang_key)}\b', text_lower):
             found.add(lang_name)
     return found
 
 def extract_media_info(filename: str, caption: str):
+    filename = ensure_str(filename)
+    caption = ensure_str(caption)
     filename_cleaned = clean_mentions_links(filename)
     filename_normalized = normalize(filename_cleaned)
-    caption_clean = clean_mentions_links(caption).lower() if caption else ""
+    caption_clean = clean_mentions_links(caption).lower()
 
     tag = "#MOVIE"
     year = None
@@ -329,7 +327,7 @@ def extract_media_info(filename: str, caption: str):
     }
 
 def extract_ott_platform(text: str) -> str:
-    text = text.lower()
+    text = ensure_str(text).lower()
     platforms = {plat for key, plat in OTT_PLATFORMS.items() if key in text}
     return " | ".join(platforms) if platforms else "N/A"
 
@@ -379,9 +377,9 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         db.movie_updates = db.db.movie_updates
 
     file_data = {
-        "filename": filename,
-        "quality": media_info["quality"],
-        "language": media_info["language"],
+        "filename": ensure_str(filename),
+        "quality": ensure_str(media_info["quality"]),
+        "language": ensure_str(media_info["language"]),
         "timestamp": datetime.now()
     }
 
@@ -389,15 +387,15 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         details = {}
         tmdb_language_override = None
         backdrop_url = None
-        poster_path = None   # portrait
+        poster_path = None
 
         if TMDB_POSTER:
             try:
                 tmdb_data = await get_movie_detailsx(base_name)
                 if tmdb_data and not tmdb_data.get("error"):
                     details = tmdb_data.copy()
-                    backdrop_url = tmdb_data.get("backdrop_url")
-                    poster_path = tmdb_data.get("poster_path")
+                    backdrop_url = ensure_str(tmdb_data.get("backdrop_url"))
+                    poster_path = ensure_str(tmdb_data.get("poster_path"))
                     orig_lang = tmdb_data.get("original_language")
                     if orig_lang:
                         tmdb_language_override = TMDB_LANG_MAP.get(orig_lang.lower())
@@ -434,24 +432,19 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
         
         file_data["language"] = final_language
 
-        # Ensure poster_path URL
+        # Ensure portrait URL
         portrait_url = None
         if poster_path:
             if not poster_path.startswith(('http://', 'https://')):
                 poster_path = f"https://image.tmdb.org/t/p/original{poster_path}"
             portrait_url = poster_path
 
-        # We will always generate landscape poster using available images
-        # No need to store poster_url in DB, we'll regenerate on each update
-        # but we keep for reference
-
-        # Build movie_data for poster generation
         movie_data = {
             "title": ensure_str(details.get("title") or base_name),
             "tagline": ensure_str(details.get("tagline", "")),
             "cast_names": [ensure_str(c) for c in details.get("cast", [])],
-            "year": year_val or details.get("release_date", "").split("-")[0] if details.get("release_date") else "",
-            "backdrop_url": ensure_str(backdrop_url),
+            "year": year_val or (details.get("release_date", "").split("-")[0] if details.get("release_date") else ""),
+            "backdrop_url": backdrop_url,
             "portrait_url": portrait_url
         }
 
@@ -465,7 +458,6 @@ async def _process_with_lock(bot, filename, caption, media_info, base_name):
                 update_fields["year"] = year_val
             if existing_movie.get("language") != final_language and final_language != "N/A":
                 update_fields["language"] = final_language
-            # Update movie_data for future regeneration
             update_fields["movie_data"] = movie_data
 
             if not file_exists:
@@ -516,7 +508,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 movie_data = {}
             if not movie_data.get("title"):
                 movie_data["title"] = base_name
-            # ensure strings
+            # ensure all strings
             movie_data = {k: ensure_str(v) if isinstance(v, (str, bytes)) else v for k, v in movie_data.items()}
             if isinstance(movie_data.get("cast_names"), list):
                 movie_data["cast_names"] = [ensure_str(c) for c in movie_data["cast_names"]]
@@ -535,8 +527,19 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
         )
 
         if not poster_bytes:
-            logger.error(f"Failed to generate poster for {base_name}")
-            return None
+            # Fallback: solid color with title only (just in case)
+            import io
+            img = Image.new("RGB", (1920, 1080), (20, 20, 30))
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("assets/font.ttf", 120)
+            except:
+                font = ImageFont.load_default()
+            draw.text((960, 540), ensure_str(base_name).upper(), font=font, fill=(255,255,255), anchor="mm")
+            out = io.BytesIO()
+            img.save(out, format="JPEG", quality=90)
+            poster_bytes = out.getvalue()
+            logger.warning(f"Used fallback poster for {base_name}")
 
         sent_msg = None
 
@@ -573,8 +576,7 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
             if sent_msg:
                 return sent_msg
             else:
-                # If editing fails, try sending new (but avoid duplicate)
-                # We'll treat as new post
+                # If editing fails, treat as new post (fallback)
                 is_update = False
 
         # ---- NEW POST CASE (or fallback) ----
@@ -595,7 +597,6 @@ async def send_movie_update(bot, base_name, is_update=False, movie_data=None):
                 return None
 
         if sent_msg and hasattr(sent_msg, 'id'):
-            # Only update message_id if it's a new post or if previous didn't have one
             if not is_update or not movie_doc.get("message_id"):
                 await db.movie_updates.update_one({"_id": base_name}, {"$set": {"message_id": sent_msg.id}})
             asyncio.create_task(verify_and_correct_post_with_ai(bot, sent_msg.id, base_name, buttons, movie_data))
@@ -644,9 +645,9 @@ def generate_movie_message(movie_doc, base_name) -> str:
     all_languages = set()
     for file in movie_doc["files"]:
         if file.get("language") and file["language"] != "N/A":
-            all_languages.update(l.strip() for l in file["language"].split(","))
+            all_languages.update(l.strip() for l in ensure_str(file["language"]).split(","))
     if movie_doc.get("language") and movie_doc["language"] != "N/A":
-        all_languages.update(l.strip() for l in movie_doc["language"].split(","))
+        all_languages.update(l.strip() for l in ensure_str(movie_doc["language"]).split(","))
     
     language_str = " ".join(f"#{lang}" for lang in sorted(all_languages)) if all_languages else "#Hindi"
     title = html.escape(ensure_str(base_name.upper()))
