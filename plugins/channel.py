@@ -122,7 +122,7 @@ async def search_google_landscape_poster_with_title(query: str) -> Optional[str]
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36"
         }
         
-        async with session.get(url, headers=headers, timeout=10) as response:
+        async with session.get(url, headers=headers, timeout=6) as response:
             if response.status != 200:
                 return None
             html_content = await response.text()
@@ -131,7 +131,7 @@ async def search_google_landscape_poster_with_title(query: str) -> Optional[str]
         images = []
         
         # Try finding high-quality image URLs inside scripts or attributes
-        matches = re.findall(r'\"(https?://[^\"]+?\\.(?:jpg|jpeg|png))\"', html_content)
+        matches = re.findall(r'\"(https?://[^\"]+?\.(?:jpg|jpeg|png))\"', html_content)
         for m in matches:
             img_url = m.replace("\\\\", "")
             if "gstatic" not in img_url and img_url not in images:
@@ -143,34 +143,39 @@ async def search_google_landscape_poster_with_title(query: str) -> Optional[str]
                 return img
                 
     except Exception as e:
-        logger.error(f"Google Images Search Error for {query}: {e}")
+        logger.error(f"Google Landscape Poster search failure: {e}")
     return None
 
-async def fetch_cinemeta_backdrop(query: str, is_series: bool = False) -> Optional[str]:
+async def fetch_cinemeta_backdrop(movie_name: str, is_series: bool) -> Optional[str]:
+    """Stremio Cinemeta API ਤੋਂ ਮੂਵੀ ਜਾਂ ਸੀਰੀਜ਼ ਦਾ ਬੈਕਡ੍ਰੌਪ ਲਿੰਕ ਲੱਭਣਾ"""
     try:
         session = await get_session()
-        m_type = "series" if is_series else "movie"
-        encoded_query = urllib.parse.quote(query)
+        encoded_query = urllib.parse.quote(movie_name)
+        media_type = "series" if is_series else "movie"
         
-        search_url = f"https://v3-cinemeta.strem.io/catalog/{m_type}/top/search={encoded_query}.json"
-        async with session.get(search_url, timeout=10) as resp:
+        url = f"https://v3-cinemeta.strem.io/catalog/{media_type}/top/search={encoded_query}.json"
+        async with session.get(url, timeout=5) as resp:
             if resp.status == 200:
                 data = await resp.json()
                 metas = data.get("metas", [])
                 if metas:
-                    best_match = metas[0]
-                    background = best_match.get("background")
-                    if background:
-                        return background
+                    backdrop = metas[0].get("background")
+                    if backdrop:
+                        return backdrop
     except Exception as e:
-        logger.error(f"Cinemeta Metadata Error: {e}")
+        logger.error(f"Cinemeta backdrop error: {e}")
     return None
 
-async def get_landscape_poster_with_title(movie_name: str, is_series: bool = False) -> Optional[str]:
+async def get_landscape_poster_with_title(movie_name: str, is_series: bool) -> Optional[str]:
     """
     TMDB, Cinemeta, ਜਾਂ Google Images ਤੋਂ ਅਜਿਹਾ ਪੋਸਟਰ ਲੱਭਦਾ ਹੈ ਜਿਸ ਉੱਤੇ ਪਹਿਲਾਂ ਤੋਂ ਹੀ ਮੂਵੀ ਦਾ ਨਾਮ (Title/Logo) ਲਿਖਿਆ ਹੋਇਆ ਹੋਵੇ।
     """
-    # 1. TMDB ਬੈਕਡ੍ਰੌਪਸ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰੋ (Try TMDB backdrops first)
+    # 1. ਪਹਿਲਾਂ Google Images ਤੋਂ ਟਾਈਟਲ ਵਾਲਾ ਪੋਸਟਰ ਲੱਭੋ (Try Google Images first to get the poster with the title logo)
+    google_poster = await search_google_landscape_poster_with_title(movie_name)
+    if google_poster:
+        return google_poster
+
+    # 2. ਜੇਕਰ ਗੂਗਲ ਤੋਂ ਨਾ ਮਿਲੇ, ਤਾਂ TMDB ਬੈਕਡ੍ਰੌਪਸ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰੋ (Fallback to TMDB backdrops)
     if LANDSCAPE_POSTER:
         try:
             details = await get_movie_detailsx(movie_name)
@@ -183,15 +188,10 @@ async def get_landscape_poster_with_title(movie_name: str, is_series: bool = Fal
         except Exception as e:
             logger.error(f"TMDB backdrop search error: {e}")
             
-    # 2. Cinemeta ਬੈਕਡ੍ਰੌਪ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰੋ (Fallback to Cinemeta backdrop)
+    # 3. Cinemeta ਬੈਕਡ੍ਰੌਪ ਦੀ ਕੋਸ਼ਿਸ਼ ਕਰੋ (Fallback to Cinemeta backdrop)
     cinemeta_poster = await fetch_cinemeta_backdrop(movie_name, is_series)
     if cinemeta_poster:
         return cinemeta_poster
-
-    # 3. ਜੇਕਰ ਦੋਵੇਂ ਨਾ ਮਿਲੇ, ਤਾਂ Google Images ਤੋਂ ਟਾਈਟਲ ਵਾਲਾ ਪੋਸਟਰ ਲੱਭੋ (Fallback to Google Images)
-    google_poster = await search_google_landscape_poster_with_title(movie_name)
-    if google_poster:
-        return google_poster
         
     return None
 
@@ -552,6 +552,7 @@ async def verify_and_correct_post_with_ai(bot, message_id: int, base_name: str, 
         if not movie_doc or not movie_doc.get("poster_url"):
             return
 
+
         correct_text = generate_movie_message(movie_doc, base_name)
         
         try:
@@ -620,4 +621,4 @@ def generate_movie_message(movie_doc, base_name) -> str:
         f"⭐ IMDb: {rating_str}\n\n"
         f"➡ Audio Track:- 🔊 {language_str}\n\n"
         f"Added ✅"
-)
+    )
