@@ -1,6 +1,3 @@
-# Complete Pyrogram Plugin with Clean Minimalist Cinematic Title Poster Fallback
-# Place this code inside /workspace/plugins/Dreamxfutures/Imdbposter.py
-
 import io
 import re
 import requests
@@ -48,7 +45,7 @@ def search_tmdb(query):
     return None
 
 # Fetch complete movie/series details from TMDb and return MovieInfo
-def get_movie_details(query):
+async def get_movie_details(query, *args, **kwargs):
     # Clean file name parameters to make TMDb query accurate
     clean_query = query
     clean_query = re.sub(r'\(?\b(19|20)\d{2}\b\)?', '', clean_query)
@@ -171,9 +168,9 @@ def get_movie_details(query):
         type="movie" if media_type == "movie" else "series"
     )
 
-# Async wrapper commonly requested by bots
-def get_movie_detailsx(query):
-    return get_movie_details(query)
+# Async wrapper commonly requested by bots (Now supports keyword arguments smoothly)
+async def get_movie_detailsx(query, *args, **kwargs):
+    return await get_movie_details(query)
 
 # Google Image Search Fallback Scraper to fetch high-res landscape backdrop image
 def search_google_landscape_backdrop(movie_title):
@@ -348,4 +345,4 @@ async def post_movie_with_generated_poster(bot, message, movie_title, backdrop_u
             chat_id=message.chat.id,
             text=caption,
             reply_markup=reply_markup
-        )
+    )
