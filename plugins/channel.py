@@ -15,7 +15,7 @@ from pyrogram.errors import MessageIdInvalid, MessageNotModified, FloodWait
 from pymongo.errors import PyMongoError, DuplicateKeyError
 
 # Plugin & Database Imports
-from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, fetch_image, get_movie_details
+from plugins.Dreamxfutures.Imdbposter import get_movie_detailsx, get_movie_details
 from database.users_chats_db import db
 from database.ia_filterdb import save_file
 from utils import temp
@@ -91,7 +91,7 @@ OTT_PLATFORMS = {
     "hoichoi": "Hoichoi", "sunnxt": "Sun NXT", "viki": "Viki"
 }
 
-CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\.,:;!?()\[\]{}<>\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
+CLEAN_PATTERN = re.compile(r'@[^ \n\r\t\\.,:;!?()\\[\\]{}<>\\\\/"\'=_%]+|\bwww\.[^\s\]\)]+|\([\@^]+\)|\[[\@^]+\]')
 NORMALIZE_PATTERN = re.compile(r"[._\-\+]+|[()\[\]{}:;'–!,.?]")
 QUALITY_PATTERN = re.compile(
     r"\b(?:HDCam|HDTC|CamRip|TS|TC|TeleSync|DVDScr|DVDRip|PreDVD|"
@@ -131,7 +131,7 @@ async def search_google_landscape_poster_with_title(query: str) -> Optional[str]
         images = []
         
         # Try finding high-quality image URLs inside scripts or attributes
-        matches = re.findall(r'"(https?://[^"]+?\\.(?:jpg|jpeg|png))"', html_content)
+        matches = re.findall(r'\"(https?://[^\"]+?\\.(?:jpg|jpeg|png))\"', html_content)
         for m in matches:
             img_url = m.replace("\\\\", "")
             if "gstatic" not in img_url and img_url not in images:
