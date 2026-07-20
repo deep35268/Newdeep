@@ -45,7 +45,7 @@ def search_tmdb(query):
     return None
 
 # Fetch complete movie/series details from TMDb and return MovieInfo
-async def get_movie_details(query, *args, **kwargs):
+async def get_movie_details(query):
     # Clean file name parameters to make TMDb query accurate
     clean_query = query
     clean_query = re.sub(r'\(?\b(19|20)\d{2}\b\)?', '', clean_query)
@@ -168,7 +168,7 @@ async def get_movie_details(query, *args, **kwargs):
         type="movie" if media_type == "movie" else "series"
     )
 
-# Async wrapper commonly requested by bots (Now supports keyword arguments smoothly)
+# Async wrapper commonly requested by bots
 async def get_movie_detailsx(query, *args, **kwargs):
     return await get_movie_details(query)
 
@@ -204,7 +204,7 @@ def search_tmdb_backdrop_url(movie_title):
         print(f"TMDb API Backdrop Error: {e}")
     return None
 
-# Generates clean, stunning cinematic landscape poster with wide letter-spacing title on the left side
+# Generates clean, stunning cinematic landscape poster with bold red title centered at the bottom
 def generate_odyssey_title_poster(movie_title, backdrop_url=None):
     W, H = 1280, 720
     img = None
@@ -250,14 +250,15 @@ def generate_odyssey_title_poster(movie_title, backdrop_url=None):
 
     draw = ImageDraw.Draw(img, "RGBA")
 
-    # Draw left-to-right vignette gradient (excellent for high contrast title readability)
-    for x in range(W):
-        if x < int(W * 0.75):
-            opacity = int(210 * (1 - (x / (W * 0.75))))
-            draw.rectangle([(x, 0), (x, H)], fill=(0, 0, 0, opacity))
+    # Draw bottom-up vignette gradient (perfect for bottom-centered cinematic titles)
+    for y in range(H):
+        if y > int(H * 0.35):
+            opacity = int(240 * ((y - H * 0.35) / (H * 0.65)))
+            draw.rectangle([(0, y), (W, y)], fill=(0, 0, 0, opacity))
 
-    # Clean the title from words like 10BIT
+    # Clean the title from words like 10BIT and remove any 4-digit year
     clean_title = movie_title.upper().replace("10BIT", "").strip()
+    clean_title = re.sub(r'\(?\b(19|20)\d{2}\b\)?', '', clean_title).strip()
     words = clean_title.split()
     
     font = None
@@ -269,9 +270,9 @@ def generate_odyssey_title_poster(movie_title, backdrop_url=None):
         except IOError:
             font = ImageFont.load_default()
 
-    # Draw wrap-aligned cinematic letters with spacious 16px tracking
-    max_text_width = int(W * 0.7)
-    spacing = 16
+    # Draw wrap-aligned cinematic letters with spacious 20px tracking
+    max_text_width = int(W * 0.85)
+    spacing = 20
     
     lines = []
     current_line = []
@@ -290,9 +291,8 @@ def generate_odyssey_title_poster(movie_title, backdrop_url=None):
 
     font_height = 70
     total_text_height = len(lines) * (font_height * 1.3)
-    start_y = (H - total_text_height) // 2 + 30
-    start_x = int(W * 0.08)
-
+    start_y = H - total_text_height - 55
+    
     for line in lines:
         chars = list(line.upper())
         char_widths = []
@@ -304,12 +304,14 @@ def generate_odyssey_title_poster(movie_title, backdrop_url=None):
                 w = 24
             char_widths.append(w)
             
-        curr_x = start_x
+        total_line_width = sum(char_widths) + (len(chars) - 1) * spacing
+        curr_x = (W - total_line_width) // 2  # Perfect horizontal centering
+        
         for idx, char in enumerate(chars):
             # 1. Elegant drop shadow for absolute legibility on any backdrop texture
             draw.text((curr_x + 3, start_y + 3), char, fill=(0, 0, 0, 240), font=font)
-            # 2. Crisp, beautiful Cool Gray text fill (#BACDDB)
-            draw.text((curr_x, start_y), char, fill=(186, 205, 219, 255), font=font)
+            # 2. Crisp, beautiful Cinematic RED text fill (#E50914)
+            draw.text((curr_x, start_y), char, fill=(229, 9, 20, 255), font=font)
             curr_x += char_widths[idx] + spacing
             
         start_y += int(font_height * 1.3)
@@ -345,4 +347,4 @@ async def post_movie_with_generated_poster(bot, message, movie_title, backdrop_u
             chat_id=message.chat.id,
             text=caption,
             reply_markup=reply_markup
-    )
+        )
